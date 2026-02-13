@@ -1,0 +1,22 @@
+{
+  "name": "pdf-reader",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "check:encoding": "node scripts/check-encoding.mjs",
+    "prebuild": "npm run check:encoding",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1",
+    "katex": "^0.16.28",
+    "marked": "^15.0.6",
+    "pdfjs-dist": "^4.9.155"
+  }
+}
