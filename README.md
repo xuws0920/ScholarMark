@@ -70,7 +70,7 @@ npm run check:encoding
 - 首次必须手动选择目录，浏览器不允许静默指定绝对路径并授权
 - 清理站点权限/站点数据后，需重新选择目录
 
-## 方案二：PM2 本机常驻（仅监听 127.0.0.1）
+## 方案二：PM2 本机常驻（固定 localhost）
 
 适合持续开发，免去每次手动启动命令。
 
@@ -80,11 +80,10 @@ npm run check:encoding
 npm i -g pm2 pm2-windows-startup
 ```
 
-### 2. 启动服务（仅本机可访问）
+### 2. 启动服务（使用固化参数）
 
 ```bash
-cd /d D:\pdf-reader
-pm2 start npm --name pdf-reader -- run dev -- --host 127.0.0.1 --port 5173
+pm2 start ecosystem.config.cjs
 ```
 
 ### 3. 设置开机自启（一次）
@@ -102,6 +101,7 @@ pm2 logs pdf-reader
 pm2 restart pdf-reader
 pm2 stop pdf-reader
 pm2 delete pdf-reader
+pm2 restart ecosystem.config.cjs
 ```
 
 ### 5. 更新代码后的建议流程
@@ -121,7 +121,7 @@ pm2 restart pdf-reader
 
 ### 6. 访问地址
 
-- `http://127.0.0.1:5173`
+- `http://localhost:5173`
 
 ## 功能介绍
 
