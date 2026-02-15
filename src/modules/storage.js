@@ -5,7 +5,7 @@
  */
 
 const DB_NAME = 'ScholarMarkDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let db = null;
 
@@ -50,6 +50,13 @@ export function initDB() {
             }
 
             // 设置表
+            if (!database.objectStoreNames.contains('figureClips')) {
+                const clipStore = database.createObjectStore('figureClips', { keyPath: 'id' });
+                clipStore.createIndex('pdfId', 'pdfId', { unique: false });
+                clipStore.createIndex('pdfId_page', ['pdfId', 'page'], { unique: false });
+                clipStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+            }
+
             if (!database.objectStoreNames.contains('settings')) {
                 database.createObjectStore('settings', { keyPath: 'key' });
             }
@@ -119,8 +126,9 @@ export function deletePdf(id) {
             const annotations = await getAnnotationsByPdf(id);
             const notes = await getNotesByPdf(id);
             const summary = await getSummaryByPdf(id);
+            const clips = await getFigureClipsByPdf(id);
 
-            const tx = db.transaction(['pdfs', 'annotations', 'notes', 'summaries'], 'readwrite');
+            const tx = db.transaction(['pdfs', 'annotations', 'notes', 'summaries', 'figureClips'], 'readwrite');
             tx.objectStore('pdfs').delete(id);
             for (const ann of annotations) {
                 tx.objectStore('annotations').delete(ann.id);
@@ -130,6 +138,9 @@ export function deletePdf(id) {
             }
             if (summary) {
                 tx.objectStore('summaries').delete(summary.id);
+            }
+            for (const clip of clips) {
+                tx.objectStore('figureClips').delete(clip.id);
             }
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
@@ -331,6 +342,63 @@ export function deleteSummary(id) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction('summaries', 'readwrite');
         const store = tx.objectStore('summaries');
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
+// ==================== 鍏抽敭鍥捐〃鎽樺綍 ====================
+
+export function addFigureClip(clip) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('figureClips', 'readwrite');
+        const store = tx.objectStore('figureClips');
+        const record = {
+            id: clip.id || generateId(),
+            pdfId: clip.pdfId,
+            page: clip.page,
+            rect: clip.rect || null,
+            imageDataUrl: clip.imageDataUrl || '',
+            title: clip.title || '图表摘录',
+            noteMd: clip.noteMd || '',
+            tags: clip.tags || [],
+            linkedAnnotationIds: clip.linkedAnnotationIds || [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+        const req = store.put(record);
+        req.onsuccess = () => resolve(record);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getFigureClipsByPdf(pdfId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('figureClips', 'readonly');
+        const store = tx.objectStore('figureClips');
+        const index = store.index('pdfId');
+        const req = index.getAll(pdfId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function updateFigureClip(clip) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('figureClips', 'readwrite');
+        const store = tx.objectStore('figureClips');
+        const next = { ...clip, updatedAt: new Date().toISOString() };
+        const req = store.put(next);
+        req.onsuccess = () => resolve(next);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function deleteFigureClip(id) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('figureClips', 'readwrite');
+        const store = tx.objectStore('figureClips');
         const req = store.delete(id);
         req.onsuccess = () => resolve();
         req.onerror = () => reject(req.error);

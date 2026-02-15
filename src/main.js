@@ -7,6 +7,7 @@ import { initPdfViewer, loadPdf, goToPage, setScale, getCurrentPage, getCurrentS
 import { initAnnotator, setPdfId as setAnnotatorPdf, showToolbar, renderAllAnnotations, getAnnotations, navigateToAnnotation, linkAnnotationToNote, removeAnnotation } from './modules/annotator.js';
 import { initNoteEditor, setPdfId as setNoteEditorPdf, insertAnnotationRef, jumpToNoteByAnnotation, getNotes, getCurrentNote, removeAnnotationFromNotes } from './modules/note-editor.js';
 import { initSummaryEditor, setPdfId as setSummaryPdf, getCurrentSummary, clearSummaryView } from './modules/summary-editor.js';
+import { initOverviewEditor, setPdfId as setOverviewPdf, clearOverviewView, refreshOverview } from './modules/overview-editor.js';
 import { initLibrary, getPdfMeta } from './modules/library.js';
 import { initSearch } from './modules/search.js';
 import { initOutline, loadOutline, clearOutline } from './modules/outline.js';
@@ -22,8 +23,11 @@ let contextMenuAnnotation = null;
 let autoSaveBound = false;
 let fileWriteChain = Promise.resolve();
 let editingAnnotationId = null;
+let leftSidebarCollapsed = false;
 
 const READING_PROGRESS_PREFIX = 'readingProgress:';
+const LEFT_SIDEBAR_COLLAPSED_KEY = 'leftSidebarCollapsed';
+const LEFT_SIDEBAR_WIDTH_KEY = 'leftSidebarWidth';
 const saveReadingProgressDebounced = debounce(async () => {
   await saveCurrentReadingProgress();
 }, 400);
@@ -64,6 +68,7 @@ async function init() {
           }
         }
         refreshAnnotationsList();
+        await refreshOverview();
       },
       onAnnotationClicked: (annotation) => {
         jumpToNoteByAnnotation(annotation);
@@ -78,6 +83,9 @@ async function init() {
     });
 
     initSummaryEditor();
+    initOverviewEditor({
+      onJumpToPage: (page) => goToPage(page)
+    });
 
     await initLibrary({
       onPdfSelected: async (pdfData, meta) => {
@@ -92,6 +100,7 @@ async function init() {
 
         await setNoteEditorPdf(pdfData.id);
         await setSummaryPdf(pdfData.id);
+        await setOverviewPdf(pdfData.id);
 
         await loadOutline();
         refreshAnnotationsList();
@@ -103,6 +112,7 @@ async function init() {
         $('#welcome-screen').style.display = 'flex';
         clearOutline();
         clearSummaryView();
+        clearOverviewView();
       }
     });
 
@@ -130,6 +140,7 @@ async function init() {
 
     setupUIEvents();
     setupResizeHandles();
+    restoreSidebarLayoutState();
     initTheme();
 
     window._refreshAnnotations = renderAllAnnotations;
@@ -201,6 +212,10 @@ function applyTheme(theme) {
 }
 
 function setupUIEvents() {
+  $('#btn-toggle-left-sidebar')?.addEventListener('click', () => {
+    applyLeftSidebarCollapsed(!leftSidebarCollapsed);
+  });
+
   $('#btn-settings').addEventListener('click', () => {
     $('#settings-modal').style.display = 'flex';
   });
@@ -434,6 +449,8 @@ function setupWorkspaceSwitch() {
 
 function applyWorkspace(workspace) {
   const isNotes = workspace === 'notes';
+  const isSummary = workspace === 'summary';
+  const isOverview = workspace === 'overview';
 
   document.querySelectorAll('#workspace-switch .workspace-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.workspace === workspace);
@@ -441,11 +458,46 @@ function applyWorkspace(workspace) {
 
   $('#workspace-notes').style.display = isNotes ? 'flex' : 'none';
   $('#workspace-notes').classList.toggle('active', isNotes);
-  $('#workspace-summary').style.display = isNotes ? 'none' : 'flex';
-  $('#workspace-summary').classList.toggle('active', !isNotes);
+  $('#workspace-summary').style.display = isSummary ? 'flex' : 'none';
+  $('#workspace-summary').classList.toggle('active', isSummary);
+  $('#workspace-overview').style.display = isOverview ? 'flex' : 'none';
+  $('#workspace-overview').classList.toggle('active', isOverview);
 
   $('#notes-tab-bar').style.display = isNotes ? 'flex' : 'none';
-  $('#summary-tab-bar').style.display = isNotes ? 'none' : 'flex';
+  $('#summary-tab-bar').style.display = isSummary ? 'flex' : 'none';
+  $('#overview-tab-bar').style.display = isOverview ? 'flex' : 'none';
+}
+
+function restoreSidebarLayoutState() {
+  const savedWidth = parseInt(localStorage.getItem(LEFT_SIDEBAR_WIDTH_KEY) || '', 10);
+  const leftSidebar = $('#sidebar-left');
+  if (leftSidebar && Number.isFinite(savedWidth) && savedWidth >= 220 && savedWidth <= 450) {
+    leftSidebar.style.width = `${savedWidth}px`;
+  }
+
+  const collapsed = localStorage.getItem(LEFT_SIDEBAR_COLLAPSED_KEY) === '1';
+  applyLeftSidebarCollapsed(collapsed);
+}
+
+function applyLeftSidebarCollapsed(collapsed) {
+  const appMain = $('#app-main');
+  const leftSidebar = $('#sidebar-left');
+  const toggleBtn = $('#btn-toggle-left-sidebar');
+  if (!appMain || !leftSidebar || !toggleBtn) return;
+
+  leftSidebarCollapsed = !!collapsed;
+
+  if (leftSidebarCollapsed) {
+    const currentWidth = leftSidebar.getBoundingClientRect().width;
+    if (Number.isFinite(currentWidth) && currentWidth >= 220) {
+      localStorage.setItem(LEFT_SIDEBAR_WIDTH_KEY, String(Math.round(currentWidth)));
+    }
+  }
+
+  appMain.classList.toggle('left-sidebar-collapsed', leftSidebarCollapsed);
+  toggleBtn.textContent = leftSidebarCollapsed ? '⟩' : '⟨';
+  toggleBtn.title = leftSidebarCollapsed ? '展开左侧栏' : '收起左侧栏';
+  localStorage.setItem(LEFT_SIDEBAR_COLLAPSED_KEY, leftSidebarCollapsed ? '1' : '0');
 }
 
 function showAnnotationContextMenu(annotation, event) {
@@ -531,6 +583,7 @@ async function deleteAnnotationWithCascade(annotationId) {
   await removeAnnotationFromNotes(annotationId);
   await removeAnnotation(annotationId);
   refreshAnnotationsList();
+  await refreshOverview();
 }
 
 function confirmDeleteAnnotation(annotation) {
@@ -751,8 +804,7 @@ function recoverInvisibleMath(root) {
 
     const style = window.getComputedStyle(katexNode);
     const hidden = style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
-    const collapsed = katexNode.offsetWidth === 0 || katexNode.offsetHeight === 0;
-    if (hidden || collapsed) {
+    if (hidden) {
       token.textContent = token.dataset.raw || '';
       token.classList.add('math-token-fallback');
     }
@@ -784,7 +836,8 @@ function setupResize(handleId, sidebarId, side) {
     const diff = e.clientX - startX;
     const newWidth = side === 'left' ? startWidth + diff : startWidth - diff;
     const min = parseInt(getComputedStyle(sidebar).minWidth, 10) || 220;
-    const max = parseInt(getComputedStyle(sidebar).maxWidth, 10) || 600;
+    const maxFallback = side === 'right' ? 880 : 450;
+    const max = parseInt(getComputedStyle(sidebar).maxWidth, 10) || maxFallback;
 
     if (newWidth >= min && newWidth <= max) {
       sidebar.style.width = newWidth + 'px';
@@ -795,6 +848,13 @@ function setupResize(handleId, sidebarId, side) {
     handle.classList.remove('active');
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
+
+    if (side === 'left' && !leftSidebarCollapsed) {
+      const width = Math.round(sidebar.getBoundingClientRect().width);
+      if (Number.isFinite(width) && width >= 220 && width <= 450) {
+        localStorage.setItem(LEFT_SIDEBAR_WIDTH_KEY, String(width));
+      }
+    }
   }
 }
 

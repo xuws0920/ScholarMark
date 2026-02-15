@@ -113,6 +113,16 @@
     gap: 16px;
 }
 
+.figure-capture-active {
+    cursor: crosshair;
+}
+
+.figure-capture-active .text-layer,
+.figure-capture-active .highlight-layer {
+    pointer-events: none;
+    user-select: none;
+}
+
 /* 单页容器 */
 .pdf-page-wrapper {
     position: relative;
@@ -120,6 +130,19 @@
     border-radius: 2px;
     overflow: hidden;
     background: white;
+}
+
+.figure-capture-active .pdf-page-wrapper {
+    cursor: crosshair;
+}
+
+.figure-capture-rect {
+    position: absolute;
+    border: 2px solid var(--accent-primary);
+    background: color-mix(in srgb, var(--accent-primary-bg) 55%, transparent);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+    pointer-events: none;
+    z-index: 5;
 }
 
 .pdf-page-wrapper canvas {

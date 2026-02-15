@@ -23,6 +23,18 @@
     flex-shrink: 0;
 }
 
+.sidebar-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.sidebar-collapse-btn {
+    width: 24px;
+    height: 24px;
+    font-size: 12px;
+}
+
 .sidebar-title {
     font-size: 14px;
     font-weight: 600;
@@ -407,4 +419,31 @@
 .outline-children {
     border-left: 1px solid var(--border-subtle);
     margin-left: 20px;
+}
+
+#app-main.left-sidebar-collapsed #sidebar-left {
+    width: 40px !important;
+    min-width: 40px !important;
+    max-width: 40px !important;
+}
+
+#app-main.left-sidebar-collapsed #sidebar-left .sidebar-tabs,
+#app-main.left-sidebar-collapsed #sidebar-left .sidebar-panel,
+#app-main.left-sidebar-collapsed #sidebar-left #file-input,
+#app-main.left-sidebar-collapsed #sidebar-left #btn-import-pdf {
+    display: none !important;
+}
+
+#app-main.left-sidebar-collapsed #sidebar-left .sidebar-header {
+    justify-content: center;
+    padding: 10px 6px;
+}
+
+#app-main.left-sidebar-collapsed #sidebar-left .sidebar-header-actions {
+    width: 100%;
+    justify-content: center;
+}
+
+#app-main.left-sidebar-collapsed #resize-left {
+    display: none;
 }

@@ -8,6 +8,7 @@ import { $ } from '../utils/dom.js';
 import { getPdfDoc, goToPage } from './pdf-viewer.js';
 
 let outlineData = null;
+const MAX_OUTLINE_DEPTH = 2; // 0-based: 显示到第 3 层
 
 /**
  * 初始化目录模块
@@ -44,14 +45,15 @@ export async function loadOutline() {
 
     try {
         outlineData = await pdfDoc.getOutline();
+        const filteredOutline = pruneOutlineByDepth(outlineData, 0);
 
-        if (!outlineData || outlineData.length === 0) {
+        if (!filteredOutline || filteredOutline.length === 0) {
             container.innerHTML = '<p class="outline-empty">📄 此文档没有目录</p>';
             return;
         }
 
         container.innerHTML = '';
-        const tree = await buildOutlineTree(outlineData, pdfDoc, 0);
+        const tree = await buildOutlineTree(filteredOutline, pdfDoc, 0);
         container.appendChild(tree);
     } catch (err) {
         console.error('加载目录失败:', err);
@@ -164,6 +166,18 @@ function toggleChildren(li, arrow) {
 /**
  * 清空目录
  */
+function pruneOutlineByDepth(items, depth) {
+    if (!Array.isArray(items) || items.length === 0) return [];
+    if (depth > MAX_OUTLINE_DEPTH) return [];
+
+    return items.map((item) => {
+        const nextItems = item.items && item.items.length > 0
+            ? pruneOutlineByDepth(item.items, depth + 1)
+            : [];
+        return { ...item, items: nextItems };
+    });
+}
+
 export function clearOutline() {
     const container = $('#pdf-outline-tree');
     if (container) {

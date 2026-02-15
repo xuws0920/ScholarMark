@@ -21,6 +21,7 @@ let currentPage = 1;
 let pageRendering = false;
 let renderQueue = [];
 let renderedPages = new Map(); // page number -> { canvas, textLayer, highlightLayer }
+let figureCaptureState = null;
 
 // 事件回调
 let onPageChange = null;
@@ -293,6 +294,9 @@ function handleScroll() {
  * 文本选择处理
  */
 function handleTextSelection(e) {
+    if (figureCaptureState?.active) {
+        return;
+    }
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || !selection.toString().trim()) {
         return;
@@ -417,10 +421,196 @@ function updateToolbarState() {
 }
 
 function clearRenderedPages() {
+    cancelFigureClipCapture();
     renderedPages.clear();
     pdfDoc = null;
     totalPages = 0;
     currentPage = 1;
+}
+
+export function startFigureClipCapture(callbacks = {}) {
+    if (!pdfDoc || !renderedPages.size) return false;
+    if (figureCaptureState?.active) return true;
+
+    const container = $('#pdf-container');
+    if (!container) return false;
+
+    const state = {
+        active: true,
+        container,
+        current: null,
+        onCaptured: callbacks.onCaptured || null,
+        onCancel: callbacks.onCancel || null,
+    };
+    figureCaptureState = state;
+
+    container.classList.add('figure-capture-active');
+    container.addEventListener('mousedown', handleCaptureMouseDown);
+    container.addEventListener('mousemove', handleCaptureMouseMove);
+    container.addEventListener('mouseup', handleCaptureMouseUp);
+    document.addEventListener('keydown', handleCaptureKeyDown);
+    return true;
+}
+
+export function cancelFigureClipCapture() {
+    const state = figureCaptureState;
+    if (!state?.active) return;
+
+    state.container?.classList.remove('figure-capture-active');
+    state.container?.removeEventListener('mousedown', handleCaptureMouseDown);
+    state.container?.removeEventListener('mousemove', handleCaptureMouseMove);
+    state.container?.removeEventListener('mouseup', handleCaptureMouseUp);
+    document.removeEventListener('keydown', handleCaptureKeyDown);
+
+    if (state.current?.rectEl && state.current.rectEl.parentElement) {
+        state.current.rectEl.parentElement.removeChild(state.current.rectEl);
+    }
+
+    state.onCancel?.();
+    figureCaptureState = null;
+}
+
+function handleCaptureKeyDown(e) {
+    if (!figureCaptureState?.active) return;
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        cancelFigureClipCapture();
+    }
+}
+
+function handleCaptureMouseDown(e) {
+    const state = figureCaptureState;
+    if (!state?.active || e.button !== 0) return;
+
+    const wrapper = e.target.closest('.pdf-page-wrapper');
+    if (!wrapper || !state.container.contains(wrapper)) return;
+
+    e.preventDefault();
+    window.getSelection()?.removeAllRanges();
+
+    const page = parseInt(wrapper.dataset.page, 10);
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const startX = clamp(e.clientX - wrapperRect.left, 0, wrapperRect.width);
+    const startY = clamp(e.clientY - wrapperRect.top, 0, wrapperRect.height);
+
+    const rectEl = document.createElement('div');
+    rectEl.className = 'figure-capture-rect';
+    rectEl.style.left = `${startX}px`;
+    rectEl.style.top = `${startY}px`;
+    rectEl.style.width = '0px';
+    rectEl.style.height = '0px';
+    wrapper.appendChild(rectEl);
+
+    state.current = {
+        wrapper,
+        page,
+        startX,
+        startY,
+        x: startX,
+        y: startY,
+        width: 0,
+        height: 0,
+        rectEl
+    };
+}
+
+function handleCaptureMouseMove(e) {
+    const state = figureCaptureState;
+    const current = state?.current;
+    if (!state?.active || !current) return;
+
+    e.preventDefault();
+    const wrapperRect = current.wrapper.getBoundingClientRect();
+    const nowX = clamp(e.clientX - wrapperRect.left, 0, wrapperRect.width);
+    const nowY = clamp(e.clientY - wrapperRect.top, 0, wrapperRect.height);
+
+    const x = Math.min(current.startX, nowX);
+    const y = Math.min(current.startY, nowY);
+    const width = Math.abs(nowX - current.startX);
+    const height = Math.abs(nowY - current.startY);
+
+    current.x = x;
+    current.y = y;
+    current.width = width;
+    current.height = height;
+
+    current.rectEl.style.left = `${x}px`;
+    current.rectEl.style.top = `${y}px`;
+    current.rectEl.style.width = `${width}px`;
+    current.rectEl.style.height = `${height}px`;
+}
+
+function handleCaptureMouseUp(e) {
+    const state = figureCaptureState;
+    const current = state?.current;
+    if (!state?.active || !current) return;
+
+    e.preventDefault();
+    const { wrapper, rectEl, page, x, y, width, height } = current;
+    state.current = null;
+
+    if (rectEl?.parentElement) {
+        rectEl.parentElement.removeChild(rectEl);
+    }
+
+    if (width < 12 || height < 12) {
+        cancelFigureClipCapture();
+        return;
+    }
+
+    const pageData = renderedPages.get(page);
+    if (!pageData?.canvas) {
+        cancelFigureClipCapture();
+        return;
+    }
+
+    const dataUrl = cropCanvasRegion(pageData.canvas, wrapper, { x, y, width, height });
+    if (dataUrl && state.onCaptured) {
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const w = wrapperRect.width || 1;
+        const h = wrapperRect.height || 1;
+        state.onCaptured({
+            page,
+            imageDataUrl: dataUrl,
+            rect: {
+                x: x / w,
+                y: y / h,
+                w: width / w,
+                h: height / h,
+            }
+        });
+    }
+
+    cancelFigureClipCapture();
+}
+
+function cropCanvasRegion(canvas, wrapper, rect) {
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const displayWidth = wrapperRect.width || parseFloat(canvas.style.width) || canvas.clientWidth || 1;
+    const displayHeight = wrapperRect.height || parseFloat(canvas.style.height) || canvas.clientHeight || 1;
+    const pxRatioX = canvas.width / displayWidth;
+    const pxRatioY = canvas.height / displayHeight;
+
+    const sx = Math.max(0, Math.floor(rect.x * pxRatioX));
+    const sy = Math.max(0, Math.floor(rect.y * pxRatioY));
+    const sw = Math.max(1, Math.floor(rect.width * pxRatioX));
+    const sh = Math.max(1, Math.floor(rect.height * pxRatioY));
+
+    const clippedW = Math.min(sw, canvas.width - sx);
+    const clippedH = Math.min(sh, canvas.height - sy);
+    if (clippedW <= 0 || clippedH <= 0) return '';
+
+    const out = document.createElement('canvas');
+    out.width = clippedW;
+    out.height = clippedH;
+    const ctx = out.getContext('2d');
+    if (!ctx) return '';
+    ctx.drawImage(canvas, sx, sy, clippedW, clippedH, 0, 0, clippedW, clippedH);
+    return out.toDataURL('image/png');
+}
+
+function clamp(v, min, max) {
+    return Math.max(min, Math.min(max, v));
 }
 
 export function getCurrentPage() { return currentPage; }
