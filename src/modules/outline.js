@@ -25,6 +25,9 @@ export function initOutline() {
             // 切换面板显示
             $('#pdf-library-wrapper').style.display = target === 'library' ? 'flex' : 'none';
             $('#pdf-outline-panel').style.display = target === 'outline' ? 'flex' : 'none';
+            if (typeof window !== 'undefined' && typeof window._onSidebarTabChange === 'function') {
+                window._onSidebarTabChange(target);
+            }
         });
     });
 }

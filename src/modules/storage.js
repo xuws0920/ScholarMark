@@ -5,7 +5,7 @@
  */
 
 const DB_NAME = 'ScholarMarkDB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 let db = null;
 
@@ -47,6 +47,12 @@ export function initDB() {
             if (!database.objectStoreNames.contains('summaries')) {
                 const summaryStore = database.createObjectStore('summaries', { keyPath: 'id' });
                 summaryStore.createIndex('pdfId', 'pdfId', { unique: true });
+            }
+
+            if (!database.objectStoreNames.contains('summaryCards')) {
+                const cardStore = database.createObjectStore('summaryCards', { keyPath: 'id' });
+                cardStore.createIndex('pdfId', 'pdfId', { unique: true });
+                cardStore.createIndex('updatedAt', 'updatedAt', { unique: false });
             }
 
             // 设置表
@@ -128,7 +134,8 @@ export function deletePdf(id) {
             const summary = await getSummaryByPdf(id);
             const clips = await getFigureClipsByPdf(id);
 
-            const tx = db.transaction(['pdfs', 'annotations', 'notes', 'summaries', 'figureClips'], 'readwrite');
+            const card = await getSummaryCardByPdf(id);
+            const tx = db.transaction(['pdfs', 'annotations', 'notes', 'summaries', 'figureClips', 'summaryCards'], 'readwrite');
             tx.objectStore('pdfs').delete(id);
             for (const ann of annotations) {
                 tx.objectStore('annotations').delete(ann.id);
@@ -138,6 +145,9 @@ export function deletePdf(id) {
             }
             if (summary) {
                 tx.objectStore('summaries').delete(summary.id);
+            }
+            if (card) {
+                tx.objectStore('summaryCards').delete(card.id);
             }
             for (const clip of clips) {
                 tx.objectStore('figureClips').delete(clip.id);
@@ -344,6 +354,50 @@ export function deleteSummary(id) {
         const store = tx.objectStore('summaries');
         const req = store.delete(id);
         req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
+// ==================== 总结卡片相关 ====================
+
+export async function upsertSummaryCard(card) {
+    const existing = await getSummaryCardByPdf(card.pdfId);
+    const now = new Date().toISOString();
+    const record = {
+        id: existing?.id || card.id || generateId(),
+        pdfId: card.pdfId,
+        pdfName: card.pdfName || '',
+        content: card.content || '',
+        createdAt: existing?.createdAt || now,
+        updatedAt: now
+    };
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('summaryCards', 'readwrite');
+        const store = tx.objectStore('summaryCards');
+        const req = store.put(record);
+        req.onsuccess = () => resolve(record);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getSummaryCardByPdf(pdfId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('summaryCards', 'readonly');
+        const store = tx.objectStore('summaryCards');
+        const index = store.index('pdfId');
+        const req = index.get(pdfId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getAllSummaryCards() {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('summaryCards', 'readonly');
+        const store = tx.objectStore('summaryCards');
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
         req.onerror = () => reject(req.error);
     });
 }

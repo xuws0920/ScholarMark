@@ -24,6 +24,10 @@ let autoSaveBound = false;
 let fileWriteChain = Promise.resolve();
 let editingAnnotationId = null;
 let leftSidebarCollapsed = false;
+let summaryCards = [];
+let activeCardIndex = 0;
+let cardLibraryOpen = false;
+let cardSortMode = localStorage.getItem('cardSortMode') === 'name' ? 'name' : 'updated';
 
 const READING_PROGRESS_PREFIX = 'readingProgress:';
 const LEFT_SIDEBAR_COLLAPSED_KEY = 'leftSidebarCollapsed';
@@ -113,6 +117,7 @@ async function init() {
         clearOutline();
         clearSummaryView();
         clearOverviewView();
+        refreshCardLibrary();
       }
     });
 
@@ -142,9 +147,11 @@ async function init() {
     setupResizeHandles();
     restoreSidebarLayoutState();
     initTheme();
+    bindCardLibraryKeys();
 
     window._refreshAnnotations = renderAllAnnotations;
     window._refreshAnnotationsList = refreshAnnotationsList;
+    window._onSidebarTabChange = handleSidebarTabChange;
   } catch (err) {
     console.error('Init failed:', err);
   }
@@ -287,6 +294,45 @@ function setupUIEvents() {
     } else {
       downloadNote(title, summary.content || '');
     }
+  });
+
+  $('#btn-export-summary-card')?.addEventListener('click', async () => {
+    if (!currentPdfId) {
+      alert('请先打开一篇文献');
+      return;
+    }
+    const summary = getCurrentSummary();
+    if (!summary) {
+      alert('请先打开总结内容');
+      return;
+    }
+    const meta = getPdfMeta(currentPdfId);
+    await storage.upsertSummaryCard({
+      pdfId: currentPdfId,
+      pdfName: meta?.name || '未知文献',
+      content: summary.content || ''
+    });
+    await refreshCardLibrary(currentPdfId);
+    alert('已导出为卡片（同文献会覆盖旧卡片）');
+  });
+
+  $('#btn-close-card-library')?.addEventListener('click', () => {
+    closeCardLibrary();
+    activateSidebarTab('library');
+  });
+
+  $('#btn-card-prev')?.addEventListener('click', () => {
+    moveCard(-1);
+  });
+
+  $('#btn-card-next')?.addEventListener('click', () => {
+    moveCard(1);
+  });
+
+  $('#btn-card-sort')?.addEventListener('click', async () => {
+    cardSortMode = cardSortMode === 'updated' ? 'name' : 'updated';
+    localStorage.setItem('cardSortMode', cardSortMode);
+    await refreshCardLibrary();
   });
 
   setupAutoSaveToDirectory();
@@ -466,6 +512,163 @@ function applyWorkspace(workspace) {
   $('#notes-tab-bar').style.display = isNotes ? 'flex' : 'none';
   $('#summary-tab-bar').style.display = isSummary ? 'flex' : 'none';
   $('#overview-tab-bar').style.display = isOverview ? 'flex' : 'none';
+}
+
+function handleSidebarTabChange(target) {
+  if (target === 'cards') {
+    openCardLibrary();
+    return;
+  }
+  closeCardLibrary();
+}
+
+async function openCardLibrary() {
+  await refreshCardLibrary(currentPdfId);
+  $('#card-library-view').style.display = 'block';
+  cardLibraryOpen = true;
+}
+
+function closeCardLibrary() {
+  $('#card-library-view').style.display = 'none';
+  cardLibraryOpen = false;
+}
+
+function activateSidebarTab(target) {
+  const tabs = document.querySelectorAll('.sidebar-tab');
+  tabs.forEach((tab) => {
+    const active = tab.dataset.sidebarTab === target;
+    tab.classList.toggle('active', active);
+  });
+  $('#pdf-library-wrapper').style.display = target === 'library' ? 'flex' : 'none';
+  $('#pdf-outline-panel').style.display = target === 'outline' ? 'flex' : 'none';
+}
+
+async function refreshCardLibrary(preferPdfId = null) {
+  const currentCardId = summaryCards[activeCardIndex]?.id || null;
+  summaryCards = await storage.getAllSummaryCards();
+  sortSummaryCards();
+
+  if (summaryCards.length === 0) {
+    activeCardIndex = 0;
+    renderCardLibrary();
+    return;
+  }
+
+  if (preferPdfId) {
+    const idx = summaryCards.findIndex((c) => c.pdfId === preferPdfId);
+    if (idx >= 0) {
+      activeCardIndex = idx;
+    } else if (currentCardId) {
+      const byCard = summaryCards.findIndex((c) => c.id === currentCardId);
+      activeCardIndex = byCard >= 0 ? byCard : Math.min(activeCardIndex, summaryCards.length - 1);
+    } else {
+      activeCardIndex = Math.min(activeCardIndex, summaryCards.length - 1);
+    }
+  } else {
+    if (currentCardId) {
+      const byCard = summaryCards.findIndex((c) => c.id === currentCardId);
+      activeCardIndex = byCard >= 0 ? byCard : Math.min(activeCardIndex, summaryCards.length - 1);
+    } else {
+      activeCardIndex = Math.min(activeCardIndex, summaryCards.length - 1);
+    }
+  }
+
+  renderCardLibrary();
+}
+
+function renderCardLibrary() {
+  const total = summaryCards.length;
+  const counter = $('#card-library-counter');
+  const empty = $('#summary-card-empty');
+  const content = $('#summary-card-content');
+  const prevBtn = $('#btn-card-prev');
+  const nextBtn = $('#btn-card-next');
+  const md = $('#summary-card-markdown');
+  const nameEl = $('#summary-card-pdf-name');
+  const updatedAtEl = $('#summary-card-updated-at');
+  renderCardSortButton();
+
+  if (counter) counter.textContent = total === 0 ? '0 / 0' : `${activeCardIndex + 1} / ${total}`;
+
+  if (total === 0) {
+    empty.style.display = 'block';
+    content.style.display = 'none';
+    prevBtn.disabled = true;
+    nextBtn.disabled = true;
+    return;
+  }
+
+  const card = summaryCards[activeCardIndex];
+  empty.style.display = 'none';
+  content.style.display = 'flex';
+  nameEl.textContent = card.pdfName || '未知文献';
+  updatedAtEl.textContent = `更新于 ${formatDateTime(card.updatedAt)}`;
+  md.innerHTML = renderMarkdown(card.content || '') || '<p class="empty-hint">暂无总结内容</p>';
+  recoverInvisibleMathForCard(md);
+
+  prevBtn.disabled = activeCardIndex <= 0;
+  nextBtn.disabled = activeCardIndex >= total - 1;
+}
+
+function moveCard(step) {
+  if (!summaryCards.length) return;
+  const next = activeCardIndex + step;
+  if (next < 0 || next >= summaryCards.length) return;
+  activeCardIndex = next;
+  renderCardLibrary();
+}
+
+function sortSummaryCards() {
+  if (cardSortMode === 'name') {
+    summaryCards.sort((a, b) => (a.pdfName || '').localeCompare((b.pdfName || ''), 'zh-CN'));
+    return;
+  }
+  summaryCards.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+}
+
+function renderCardSortButton() {
+  const btn = $('#btn-card-sort');
+  if (!btn) return;
+  btn.textContent = cardSortMode === 'updated' ? '按更新时间' : '按文献名';
+  btn.title = cardSortMode === 'updated' ? '当前按更新时间排序，点击切换为按文献名' : '当前按文献名排序，点击切换为按更新时间';
+}
+
+function bindCardLibraryKeys() {
+  document.addEventListener('keydown', (e) => {
+    if (!cardLibraryOpen) return;
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      moveCard(-1);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      moveCard(1);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeCardLibrary();
+      activateSidebarTab('library');
+    }
+  });
+}
+
+function recoverInvisibleMathForCard(root) {
+  const tokens = root.querySelectorAll('.math-token');
+  tokens.forEach((token) => {
+    const katexNode = token.querySelector('.katex');
+    if (!katexNode) return;
+    const style = window.getComputedStyle(katexNode);
+    const hidden = style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
+    if (hidden) {
+      token.textContent = token.dataset.raw || '';
+      token.classList.add('math-token-fallback');
+    }
+  });
+}
+
+function formatDateTime(isoString) {
+  if (!isoString) return '暂无';
+  const d = new Date(isoString);
+  if (Number.isNaN(d.getTime())) return '暂无';
+  return d.toLocaleString();
 }
 
 function restoreSidebarLayoutState() {
