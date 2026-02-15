@@ -119,6 +119,9 @@ async function createAnnotation(color, insertToNote = false) {
         pdfId: currentPdfId,
         page: selectedInfo.page,
         text: selectedInfo.text,
+        anchorText: selectedInfo.text,
+        displayTextMd: '',
+        questionMd: '',
         color: color,
         rects: selectedInfo.rects,
         noteId: null

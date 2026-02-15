@@ -160,7 +160,7 @@ export async function insertAnnotationRef(annotation) {
   }
 
   const editor = $('#note-editor');
-  const refText = `\n\n> 🔖 **[P${annotation.page}]** ${annotation.text}\n> <span class="ref-page" data-annotation-id="${annotation.id}">↳ 第 ${annotation.page} 页标注</span>\n\n`;
+  const refText = buildAnnotationBlock(annotation);
 
   const pos = editor.selectionStart;
   const before = editor.value.substring(0, pos);
@@ -181,6 +181,38 @@ export async function insertAnnotationRef(annotation) {
 
   refreshNotesOutline(editor.value);
   updatePreview();
+}
+
+export async function removeAnnotationFromNotes(annotationId) {
+  if (!annotationId || !Array.isArray(notes) || notes.length === 0) return;
+
+  for (const note of notes) {
+    const linked = Array.isArray(note.linkedAnnotationIds) ? note.linkedAnnotationIds : [];
+    const hasLink = linked.includes(annotationId);
+    const source = note.content || '';
+    const cleaned = removeAnnotationBlockContent(source, annotationId);
+    const contentChanged = cleaned !== source;
+    const linkChanged = hasLink;
+
+    if (!contentChanged && !linkChanged) {
+      continue;
+    }
+
+    note.content = cleaned;
+    note.linkedAnnotationIds = linked.filter((id) => id !== annotationId);
+    await storage.updateNote(note);
+
+    if (currentNote && currentNote.id === note.id) {
+      currentNote.content = note.content;
+      currentNote.linkedAnnotationIds = [...note.linkedAnnotationIds];
+      const editor = $('#note-editor');
+      if (editor) {
+        editor.value = note.content || '';
+      }
+      refreshNotesOutline(note.content || '');
+      updatePreview();
+    }
+  }
 }
 
 function updatePreview() {
@@ -281,6 +313,158 @@ function parseNoteOutlineItems(content) {
   }
 
   return items;
+}
+
+function buildAnnotationBlock(annotation) {
+  const annId = annotation.id;
+  const page = annotation.page;
+  const text = annotation.text || '';
+
+  return [
+    '',
+    `<!-- ANN_BLOCK_START:${annId} -->`,
+    `> 🔖 **[P${page}]** ${text}`,
+    `> <span class="ref-page" data-annotation-id="${annId}">↳ 第 ${page} 页标注</span>`,
+    '',
+    '',
+    `<!-- ANN_BLOCK_END:${annId} -->`,
+    ''
+  ].join('\n');
+}
+
+function removeAnnotationBlockContent(content, annotationId) {
+  if (!content || !annotationId) return content || '';
+
+  const escapedId = escapeRegExp(annotationId);
+
+  // 新格式：删除带唯一边界的完整引用块（含块内编辑内容）
+  const markerPattern = new RegExp(
+    `(?:\\n|^)\\s*<!--\\s*ANN_BLOCK_START:${escapedId}\\s*-->[\\s\\S]*?<!--\\s*ANN_BLOCK_END:${escapedId}\\s*-->\\s*(?=\\n|$)`,
+    'g'
+  );
+  let next = content.replace(markerPattern, '\n');
+
+  // 旧格式/手工改动格式兜底：只要命中 data-annotation-id，就删除其所属整块。
+  const anchorPattern = new RegExp(
+    `data-annotation-id\\s*=\\s*(['"])${escapedId}\\1`,
+    'i'
+  );
+
+  while (true) {
+    const m = anchorPattern.exec(next);
+    if (!m) break;
+
+    const anchorIndex = m.index;
+    const lineStart = findLineStart(next, anchorIndex);
+    const blockStart = expandBlockStart(next, lineStart);
+    const blockEnd = expandBlockEnd(next, anchorIndex + m[0].length);
+
+    if (blockEnd <= blockStart) break;
+    next = `${next.slice(0, blockStart)}\n${next.slice(blockEnd)}`;
+  }
+
+  return normalizeNoteSpacing(next);
+}
+
+function normalizeNoteSpacing(content) {
+  return (content || '')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^\n+/, '')
+    .replace(/\n+$/, '');
+}
+
+function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function findLineStart(text, index) {
+  const i = Math.max(0, Math.min(index, text.length));
+  const p = text.lastIndexOf('\n', i);
+  return p === -1 ? 0 : p + 1;
+}
+
+function findLineEnd(text, index) {
+  const i = Math.max(0, Math.min(index, text.length));
+  const p = text.indexOf('\n', i);
+  return p === -1 ? text.length : p;
+}
+
+function getLineRangeAt(text, index) {
+  const start = findLineStart(text, index);
+  const end = findLineEnd(text, index);
+  return { start, end, text: text.slice(start, end) };
+}
+
+function previousLineRange(text, lineStart) {
+  if (lineStart <= 0) return null;
+  const prevEnd = Math.max(0, lineStart - 1);
+  const prevStart = findLineStart(text, prevEnd);
+  return { start: prevStart, end: prevEnd, text: text.slice(prevStart, prevEnd) };
+}
+
+function nextLineRange(text, lineEnd) {
+  if (lineEnd >= text.length) return null;
+  const nextStart = lineEnd + 1;
+  if (nextStart > text.length) return null;
+  const nextEnd = findLineEnd(text, nextStart);
+  return { start: nextStart, end: nextEnd, text: text.slice(nextStart, nextEnd) };
+}
+
+function expandBlockStart(text, fromLineStart) {
+  let start = fromLineStart;
+
+  while (true) {
+    const prev = previousLineRange(text, start);
+    if (!prev) break;
+
+    const trimmed = prev.text.trim();
+    if (
+      trimmed === '' ||
+      trimmed.startsWith('>') ||
+      /^<!--\s*ANN_BLOCK_START:/.test(trimmed)
+    ) {
+      start = prev.start;
+      continue;
+    }
+    break;
+  }
+
+  return start;
+}
+
+function expandBlockEnd(text, fromIndex) {
+  let cursor = fromIndex;
+  let line = getLineRangeAt(text, cursor);
+  let end = line.end;
+
+  while (true) {
+    const next = nextLineRange(text, end);
+    if (!next) {
+      end = text.length;
+      break;
+    }
+
+    const trimmed = next.text.trim();
+    if (
+      trimmed === '' ||
+      /^<!--\s*ANN_BLOCK_END:/.test(trimmed)
+    ) {
+      end = next.end;
+      continue;
+    }
+
+    if (
+      /^<!--\s*ANN_BLOCK_START:/.test(trimmed) ||
+      /^>\s*🔖\s*\*\*\[P/.test(trimmed) ||
+      /data-annotation-id\s*=/.test(trimmed)
+    ) {
+      break;
+    }
+
+    end = next.end;
+  }
+
+  return end;
 }
 
 function jumpToOutlineItem(item) {

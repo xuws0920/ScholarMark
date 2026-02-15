@@ -167,6 +167,9 @@ export function addAnnotation(annotation) {
             pdfId: annotation.pdfId,
             page: annotation.page,
             text: annotation.text,
+            anchorText: annotation.anchorText || annotation.text || '',
+            displayTextMd: annotation.displayTextMd || '',
+            questionMd: annotation.questionMd || '',
             color: annotation.color,
             rects: annotation.rects, // 高亮区域坐标数组 [{x, y, w, h}]
             noteId: annotation.noteId || null,
@@ -370,9 +373,12 @@ export async function searchAll(query) {
         req.onerror = () => reject(req.error);
     });
 
-    results.annotations = allAnnotations.filter(a =>
-        a.text && a.text.toLowerCase().includes(q)
-    );
+    results.annotations = allAnnotations.filter((a) => {
+        const text = (a.text || '').toLowerCase();
+        const displayTextMd = (a.displayTextMd || '').toLowerCase();
+        const questionMd = (a.questionMd || '').toLowerCase();
+        return text.includes(q) || displayTextMd.includes(q) || questionMd.includes(q);
+    });
 
     // 搜索笔记
     const allNotes = await new Promise((resolve, reject) => {

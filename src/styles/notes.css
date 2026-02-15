@@ -541,14 +541,46 @@
     min-width: 0;
 }
 
-.annotation-item-text {
+.annotation-field-card {
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    padding: 8px 10px;
+    margin-bottom: 6px;
+}
+
+.annotation-question-card {
+    background: color-mix(in srgb, var(--accent-primary-bg) 35%, var(--bg-secondary));
+}
+
+.annotation-field-label {
+    font-size: 10px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+}
+
+.annotation-item-md {
     font-size: 12px;
     color: var(--text-secondary);
-    line-height: 1.5;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+}
+
+.annotation-item-md p:first-child {
+    margin-top: 0;
+}
+
+.annotation-item-md p:last-child {
+    margin-bottom: 0;
+}
+
+.annotation-empty-hint {
+    margin: 0;
+    color: var(--text-tertiary);
+    font-size: 12px;
+    font-style: italic;
 }
 
 .annotation-item-meta {
@@ -571,25 +603,73 @@
     text-decoration: underline;
 }
 
-.annotation-item-delete {
-    color: var(--text-tertiary);
+.annotation-item-action {
+    border: 1px solid var(--border-default);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
     cursor: pointer;
-    font-size: 12px;
+    font-size: 11px;
     font-family: var(--font-sans);
-    margin-left: auto;
-    padding: 0 4px;
-    border-radius: 3px;
+    padding: 2px 8px;
+    border-radius: 999px;
     transition: all var(--transition-fast);
-    opacity: 0;
 }
 
-.annotation-item:hover .annotation-item-delete {
-    opacity: 1;
+.annotation-item-action:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
 }
 
 .annotation-item-delete:hover {
     color: var(--accent-danger);
     background: var(--accent-danger-bg);
+    border-color: color-mix(in srgb, var(--accent-danger) 35%, var(--border-default));
+}
+
+.annotation-item-save {
+    color: var(--accent-primary);
+    border-color: color-mix(in srgb, var(--accent-primary) 35%, var(--border-default));
+    background: var(--accent-primary-bg);
+}
+
+.annotation-inline-editor {
+    margin: 8px 0 6px;
+    border: 1px dashed var(--border-default);
+    border-radius: var(--radius-md);
+    padding: 8px;
+    background: var(--bg-tertiary);
+}
+
+.annotation-editor-label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.annotation-editor-textarea {
+    width: 100%;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.55;
+    padding: 8px;
+    resize: vertical;
+    margin-bottom: 8px;
+}
+
+.annotation-editor-textarea:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.annotation-editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
 }
 
 .empty-hint {

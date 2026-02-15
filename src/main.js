@@ -5,13 +5,14 @@
 import { initDB } from './modules/storage.js';
 import { initPdfViewer, loadPdf, goToPage, setScale, getCurrentPage, getCurrentScale } from './modules/pdf-viewer.js';
 import { initAnnotator, setPdfId as setAnnotatorPdf, showToolbar, renderAllAnnotations, getAnnotations, navigateToAnnotation, linkAnnotationToNote, removeAnnotation } from './modules/annotator.js';
-import { initNoteEditor, setPdfId as setNoteEditorPdf, insertAnnotationRef, jumpToNoteByAnnotation, getNotes, getCurrentNote } from './modules/note-editor.js';
+import { initNoteEditor, setPdfId as setNoteEditorPdf, insertAnnotationRef, jumpToNoteByAnnotation, getNotes, getCurrentNote, removeAnnotationFromNotes } from './modules/note-editor.js';
 import { initSummaryEditor, setPdfId as setSummaryPdf, getCurrentSummary, clearSummaryView } from './modules/summary-editor.js';
 import { initLibrary, getPdfMeta } from './modules/library.js';
 import { initSearch } from './modules/search.js';
 import { initOutline, loadOutline, clearOutline } from './modules/outline.js';
 import { chooseDirectory, exportNoteToDir, exportAllNotes, downloadNote } from './utils/export.js';
 import { $, debounce } from './utils/dom.js';
+import { renderMarkdown } from './utils/markdown.js';
 import * as storage from './modules/storage.js';
 
 let currentPdfId = null;
@@ -20,6 +21,7 @@ let dirPermissionState = 'unknown';
 let contextMenuAnnotation = null;
 let autoSaveBound = false;
 let fileWriteChain = Promise.resolve();
+let editingAnnotationId = null;
 
 const READING_PROGRESS_PREFIX = 'readingProgress:';
 const saveReadingProgressDebounced = debounce(async () => {
@@ -282,8 +284,11 @@ function setupUIEvents() {
 
   $('#ctx-delete-annotation').addEventListener('click', async () => {
     if (contextMenuAnnotation) {
-      await removeAnnotation(contextMenuAnnotation.id);
-      refreshAnnotationsList();
+      if (!confirmDeleteAnnotation(contextMenuAnnotation)) {
+        hideContextMenu();
+        return;
+      }
+      await deleteAnnotationWithCascade(contextMenuAnnotation.id);
     }
     hideContextMenu();
   });
@@ -478,6 +483,7 @@ function refreshAnnotationsList() {
   const annotations = getAnnotations();
 
   if (annotations.length === 0) {
+    editingAnnotationId = null;
     container.innerHTML = '<p class="empty-hint">暂无标注</p>';
     return;
   }
@@ -511,47 +517,246 @@ function refreshAnnotationsList() {
     anns.sort((a, b) => a.page - b.page);
 
     for (const ann of anns) {
-      const item = document.createElement('div');
-      item.className = 'annotation-item';
-
-      item.innerHTML = `
-        <div class="annotation-item-color" style="background:${ann.color}"></div>
-        <div class="annotation-item-content">
-          <div class="annotation-item-text">${escapeHtml(ann.text)}</div>
-          <div class="annotation-item-meta">
-            <span>第 ${ann.page} 页</span>
-            ${ann.noteId ? '<span class="annotation-item-link">查看笔记</span>' : ''}
-            <span class="annotation-item-delete" title="删除标注">删除</span>
-          </div>
-        </div>
-      `;
-
-      item.addEventListener('click', () => navigateToAnnotation(ann));
-
-      const deleteBtn = item.querySelector('.annotation-item-delete');
-      if (deleteBtn) {
-        deleteBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          if (confirm('确定删除该标注吗？')) {
-            await removeAnnotation(ann.id);
-            refreshAnnotationsList();
-          }
-        });
-      }
-
-      const noteLink = item.querySelector('.annotation-item-link');
-      if (noteLink) {
-        noteLink.addEventListener('click', (e) => {
-          e.stopPropagation();
-          jumpToNoteByAnnotation(ann);
-        });
-      }
-
+      const item = buildAnnotationItem(ann);
       group.appendChild(item);
     }
 
     container.appendChild(group);
   }
+}
+
+async function deleteAnnotationWithCascade(annotationId) {
+  if (!annotationId) return;
+
+  await removeAnnotationFromNotes(annotationId);
+  await removeAnnotation(annotationId);
+  refreshAnnotationsList();
+}
+
+function confirmDeleteAnnotation(annotation) {
+  if (!annotation) return false;
+
+  const fragment = truncateForDialog(((annotation.displayTextMd || '').trim() || (annotation.text || '').trim()), 120);
+  const question = truncateForDialog((annotation.questionMd || '').trim(), 120);
+
+  let message = '删除该标注后，将同时删除笔记中与该标注关联的整块内容（引用块 + 你在块内写的内容）。\n\n';
+  message += `片段预览：${fragment || '（空）'}`;
+  if (question) {
+    message += `\n问题预览：${question}`;
+  }
+  message += '\n\n是否继续删除？';
+
+  return confirm(message);
+}
+
+function truncateForDialog(text, maxLen = 100) {
+  if (!text) return '';
+  const flat = text.replace(/\s+/g, ' ').trim();
+  if (flat.length <= maxLen) return flat;
+  return `${flat.slice(0, maxLen - 1)}…`;
+}
+
+function buildAnnotationItem(ann) {
+  const item = document.createElement('div');
+  item.className = 'annotation-item';
+  item.dataset.annotationId = ann.id;
+
+  const color = document.createElement('div');
+  color.className = 'annotation-item-color';
+  color.style.background = ann.color || '#FBBF24';
+
+  const content = document.createElement('div');
+  content.className = 'annotation-item-content';
+
+  const fragmentCard = document.createElement('div');
+  fragmentCard.className = 'annotation-field-card';
+  const fragmentLabel = document.createElement('div');
+  fragmentLabel.className = 'annotation-field-label';
+  fragmentLabel.textContent = '标注片段';
+  const fragmentValue = document.createElement('div');
+  fragmentValue.className = 'annotation-item-md markdown-body';
+
+  const questionCard = document.createElement('div');
+  questionCard.className = 'annotation-field-card annotation-question-card';
+  const questionLabel = document.createElement('div');
+  questionLabel.className = 'annotation-field-label';
+  questionLabel.textContent = '问题';
+  const questionValue = document.createElement('div');
+  questionValue.className = 'annotation-item-md markdown-body';
+
+  const rawText = (ann.text || '').trim();
+  const displayText = (ann.displayTextMd || '').trim() || rawText;
+  const questionText = (ann.questionMd || '').trim();
+
+  renderMarkdownInto(
+    fragmentValue,
+    displayText,
+    rawText ? '暂无可展示片段，可点击“编辑”修正' : '标注为空'
+  );
+  renderMarkdownInto(
+    questionValue,
+    questionText,
+    '点击“编辑”补充这条标注对应的问题'
+  );
+
+  fragmentCard.append(fragmentLabel, fragmentValue);
+  questionCard.append(questionLabel, questionValue);
+
+  const meta = document.createElement('div');
+  meta.className = 'annotation-item-meta';
+
+  const page = document.createElement('span');
+  page.textContent = `第 ${ann.page} 页`;
+  meta.appendChild(page);
+
+  if (ann.noteId) {
+    const noteLink = document.createElement('span');
+    noteLink.className = 'annotation-item-link';
+    noteLink.textContent = '查看笔记';
+    noteLink.dataset.noJump = '1';
+    noteLink.addEventListener('click', (e) => {
+      e.stopPropagation();
+      jumpToNoteByAnnotation(ann);
+    });
+    meta.appendChild(noteLink);
+  }
+
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'annotation-item-action';
+  editBtn.dataset.noJump = '1';
+  editBtn.textContent = editingAnnotationId === ann.id ? '收起' : '编辑';
+  editBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    editingAnnotationId = editingAnnotationId === ann.id ? null : ann.id;
+    refreshAnnotationsList();
+  });
+  meta.appendChild(editBtn);
+
+  const deleteBtn = document.createElement('button');
+  deleteBtn.type = 'button';
+  deleteBtn.className = 'annotation-item-action annotation-item-delete';
+  deleteBtn.dataset.noJump = '1';
+  deleteBtn.title = '删除标注';
+  deleteBtn.textContent = '删除';
+  deleteBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!confirmDeleteAnnotation(ann)) return;
+    if (editingAnnotationId === ann.id) editingAnnotationId = null;
+    await deleteAnnotationWithCascade(ann.id);
+  });
+  meta.appendChild(deleteBtn);
+
+  content.append(fragmentCard, questionCard);
+
+  if (editingAnnotationId === ann.id) {
+    content.appendChild(buildAnnotationEditor(ann));
+  }
+
+  content.appendChild(meta);
+  item.append(color, content);
+
+  item.addEventListener('click', (e) => {
+    if (e.target.closest('[data-no-jump],a,button,textarea,input,label')) return;
+    navigateToAnnotation(ann);
+  });
+
+  return item;
+}
+
+function buildAnnotationEditor(ann) {
+  const panel = document.createElement('div');
+  panel.className = 'annotation-inline-editor';
+  panel.dataset.noJump = '1';
+
+  const displayLabel = document.createElement('label');
+  displayLabel.className = 'annotation-editor-label';
+  displayLabel.textContent = '片段修正（Markdown / 公式）';
+
+  const displayInput = document.createElement('textarea');
+  displayInput.className = 'annotation-editor-textarea';
+  displayInput.rows = 4;
+  displayInput.placeholder = '可修正文献片段，支持 Markdown 和 $...$/$$...$$';
+  displayInput.value = ann.displayTextMd || '';
+
+  const questionLabel = document.createElement('label');
+  questionLabel.className = 'annotation-editor-label';
+  questionLabel.textContent = '对应问题（Markdown / 公式）';
+
+  const questionInput = document.createElement('textarea');
+  questionInput.className = 'annotation-editor-textarea';
+  questionInput.rows = 3;
+  questionInput.placeholder = '请输入这条标注想解决的问题';
+  questionInput.value = ann.questionMd || '';
+
+  const actions = document.createElement('div');
+  actions.className = 'annotation-editor-actions';
+
+  const resetBtn = document.createElement('button');
+  resetBtn.type = 'button';
+  resetBtn.className = 'annotation-item-action';
+  resetBtn.textContent = '恢复原摘录';
+  resetBtn.addEventListener('click', () => {
+    displayInput.value = '';
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'annotation-item-action';
+  cancelBtn.textContent = '取消';
+  cancelBtn.addEventListener('click', () => {
+    editingAnnotationId = null;
+    refreshAnnotationsList();
+  });
+
+  const saveBtn = document.createElement('button');
+  saveBtn.type = 'button';
+  saveBtn.className = 'annotation-item-action annotation-item-save';
+  saveBtn.textContent = '保存';
+  saveBtn.addEventListener('click', async () => {
+    const annList = getAnnotations();
+    const target = annList.find((x) => x.id === ann.id);
+    if (!target) return;
+
+    target.displayTextMd = displayInput.value.trim();
+    target.questionMd = questionInput.value.trim();
+    target.anchorText = target.anchorText || target.text || '';
+    await storage.updateAnnotation(target);
+
+    editingAnnotationId = null;
+    refreshAnnotationsList();
+  });
+
+  actions.append(resetBtn, cancelBtn, saveBtn);
+  panel.append(displayLabel, displayInput, questionLabel, questionInput, actions);
+  return panel;
+}
+
+function renderMarkdownInto(container, markdownText, emptyHint) {
+  const source = (markdownText || '').trim();
+  if (!source) {
+    container.innerHTML = `<p class="annotation-empty-hint">${emptyHint}</p>`;
+    return;
+  }
+
+  container.innerHTML = renderMarkdown(source);
+  recoverInvisibleMath(container);
+}
+
+function recoverInvisibleMath(root) {
+  const tokens = root.querySelectorAll('.math-token');
+  tokens.forEach((token) => {
+    const katexNode = token.querySelector('.katex');
+    if (!katexNode) return;
+
+    const style = window.getComputedStyle(katexNode);
+    const hidden = style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
+    const collapsed = katexNode.offsetWidth === 0 || katexNode.offsetHeight === 0;
+    if (hidden || collapsed) {
+      token.textContent = token.dataset.raw || '';
+      token.classList.add('math-token-fallback');
+    }
+  });
 }
 
 function setupResizeHandles() {
@@ -591,12 +796,6 @@ function setupResize(handleId, sidebarId, side) {
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onMouseUp);
   }
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
 }
 
 init();
