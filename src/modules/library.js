@@ -29,6 +29,7 @@ export async function initLibrary(callbacks = {}) {
     $('#btn-import-pdf').addEventListener('click', () => {
         $('#file-input').click();
     });
+    $('#btn-import-bundle')?.addEventListener('click', importBundleDirectory);
 
     // 文件选择
     $('#file-input').addEventListener('change', handleFileSelect);
@@ -75,6 +76,155 @@ async function importPdf(file) {
 
     // 自动打开新导入的 PDF
     selectPdf(pdfRecord.id);
+}
+
+async function importBundleDirectory() {
+    if (!('showDirectoryPicker' in window)) {
+        alert('当前浏览器不支持目录导入，请使用 Chrome 或 Edge');
+        return;
+    }
+
+    let dirHandle = null;
+    try {
+        dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+    } catch (e) {
+        if (e.name !== 'AbortError') {
+            console.error('选择目录失败:', e);
+        }
+        return;
+    }
+
+    const importedPdfIds = [];
+    let importedMdOnly = 0;
+    try {
+        for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'directory') {
+                const result = await importBundleFolder(entry);
+                const id = result?.pdfId || null;
+                importedMdOnly += result?.mdOnlyCount || 0;
+                if (id) importedPdfIds.push(id);
+            } else if (entry.kind === 'file' && /\.pdf$/i.test(entry.name)) {
+                const id = await importBundleRootPdf(entry, dirHandle);
+                if (id) importedPdfIds.push(id);
+            }
+        }
+    } catch (err) {
+        console.error('导入导出包失败:', err);
+        alert('导入失败，请检查目录结构');
+        return;
+    }
+
+    renderList();
+    if (importedPdfIds.length > 0) {
+        await selectPdf(importedPdfIds[0]);
+        alert(`导入完成：${importedPdfIds.length} 篇文献${importedMdOnly ? `，并导入 ${importedMdOnly} 个 Markdown 文件` : ''}`);
+    } else if (importedMdOnly > 0) {
+        alert(`已导入 ${importedMdOnly} 个 Markdown 文件`);
+    } else {
+        alert('未发现可导入内容');
+    }
+}
+
+async function importBundleRootPdf(pdfEntry, dirHandle) {
+    const file = await pdfEntry.getFile();
+    const id = await upsertPdfFromFile(file);
+    if (!id) return null;
+    await importMdFilesForPdf(dirHandle, id);
+    return id;
+}
+
+async function importBundleFolder(folderHandle) {
+    let pdfFile = null;
+    for await (const entry of folderHandle.values()) {
+        if (entry.kind === 'file' && /\.pdf$/i.test(entry.name)) {
+            pdfFile = await entry.getFile();
+            break;
+        }
+    }
+    if (!pdfFile) {
+        if (!currentPdfId) return { pdfId: null, mdOnlyCount: 0 };
+        const mdOnlyCount = await importMdFilesForPdf(folderHandle, currentPdfId);
+        return { pdfId: null, mdOnlyCount };
+    }
+
+    const pdfId = await upsertPdfFromFile(pdfFile);
+    if (!pdfId) return null;
+
+    await importMdFilesForPdf(folderHandle, pdfId);
+    return { pdfId, mdOnlyCount: 0 };
+}
+
+async function upsertPdfFromFile(file) {
+    const arrayBuffer = await file.arrayBuffer();
+    const existing = pdfs.find((p) => p.name === file.name);
+    const pdfRecord = await storage.addPdf({
+        id: existing?.id || undefined,
+        name: file.name,
+        data: arrayBuffer,
+        size: file.size
+    });
+
+    if (!existing) {
+        pdfs.push(pdfRecord);
+    } else {
+        const idx = pdfs.findIndex((p) => p.id === existing.id);
+        pdfs[idx] = { ...pdfRecord };
+    }
+    return pdfRecord.id;
+}
+
+async function importMdFilesForPdf(dirHandle, pdfId) {
+    const existingNotes = await storage.getNotesByPdf(pdfId);
+    const noteByTitle = new Map(existingNotes.map((n) => [n.title, n]));
+    const existingSummary = await storage.getSummaryByPdf(pdfId);
+
+    let imported = 0;
+    for await (const entry of dirHandle.values()) {
+        if (entry.kind !== 'file' || !/\.md$/i.test(entry.name)) continue;
+
+        const file = await entry.getFile();
+        const content = await file.text();
+        const title = entry.name.replace(/\.md$/i, '').trim();
+        if (!title) continue;
+
+        if (title === '文献总结') {
+            if (existingSummary) {
+                existingSummary.title = '文献总结';
+                existingSummary.content = content;
+                await storage.updateSummary(existingSummary);
+            } else {
+                await storage.addSummary({
+                    pdfId,
+                    title: '文献总结',
+                    content
+                });
+            }
+            imported += 1;
+            continue;
+        }
+
+        if (title === '全文翻译') {
+            await storage.setSetting(`translationFulltextDoc:${pdfId}`, content);
+            imported += 1;
+            continue;
+        }
+
+        const note = noteByTitle.get(title);
+        if (note) {
+            note.content = content;
+            await storage.updateNote(note);
+        } else {
+            const added = await storage.addNote({
+                pdfId,
+                title,
+                content,
+                linkedAnnotationIds: []
+            });
+            noteByTitle.set(title, added);
+        }
+        imported += 1;
+    }
+    return imported;
 }
 
 /**

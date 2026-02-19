@@ -4,6 +4,7 @@
 
 import { $, debounce } from '../utils/dom.js';
 import { renderMarkdown } from '../utils/markdown.js';
+import { markSaved, markSaveError } from '../utils/save-status.js';
 import * as storage from './storage.js';
 
 let currentPdfId = null;
@@ -29,7 +30,13 @@ export function initSummaryEditor() {
     editor?.addEventListener('input', debounce(async () => {
         if (!currentSummary) return;
         currentSummary.content = editor.value;
-        await storage.updateSummary(currentSummary);
+        try {
+            await storage.updateSummary(currentSummary);
+            markSaved('总结', '已保存');
+        } catch (err) {
+            console.warn(err);
+            markSaveError('总结', '保存失败');
+        }
     }, 500));
 
     $('#btn-reset-summary')?.addEventListener('click', async () => {
@@ -39,6 +46,7 @@ export function initSummaryEditor() {
         currentSummary.content = getDefaultSummaryTemplate();
         $('#summary-editor').value = currentSummary.content;
         await storage.updateSummary(currentSummary);
+        markSaved('总结', '已保存');
         updatePreview();
     });
 }
@@ -74,6 +82,21 @@ export function clearSummaryView() {
 
 export function getCurrentSummary() {
     return currentSummary;
+}
+
+export async function appendToSummary(content, heading = '## AI 翻译片段') {
+    if (!currentSummary) return false;
+    const extra = (content || '').trim();
+    if (!extra) return false;
+
+    const original = ($('#summary-editor')?.value || currentSummary.content || '').trimEnd();
+    const merged = [original, '', heading, '', extra, ''].join('\n');
+    currentSummary.content = merged;
+    $('#summary-editor').value = merged;
+    await storage.updateSummary(currentSummary);
+    markSaved('总结', '已保存');
+    updatePreview();
+    return true;
 }
 
 function updatePreview() {

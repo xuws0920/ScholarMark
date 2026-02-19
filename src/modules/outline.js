@@ -1,30 +1,29 @@
-/**
- * outline.js — PDF 目录大纲模块
- * 
- * 提取 PDF 文档目录书签，渲染为可折叠的树形结构，支持点击跳转
- */
-
 import { $ } from '../utils/dom.js';
 import { getPdfDoc, goToPage } from './pdf-viewer.js';
 
 let outlineData = null;
-const MAX_OUTLINE_DEPTH = 2; // 0-based: 显示到第 3 层
+const MAX_OUTLINE_DEPTH = 2;
+let heightRaf = 0;
 
-/**
- * 初始化目录模块
- */
 export function initOutline() {
-    // Tab 切换事件
+    bindSidebarTabs();
+    bindOutlineDrawer();
+    window.addEventListener('resize', scheduleOutlineDrawerHeightUpdate);
+}
+
+function bindSidebarTabs() {
     const tabs = document.querySelectorAll('.sidebar-tab');
-    tabs.forEach(tab => {
+    tabs.forEach((tab) => {
         tab.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
+            tabs.forEach((t) => t.classList.remove('active'));
             tab.classList.add('active');
 
             const target = tab.dataset.sidebarTab;
-            // 切换面板显示
-            $('#pdf-library-wrapper').style.display = target === 'library' ? 'flex' : 'none';
-            $('#pdf-outline-panel').style.display = target === 'outline' ? 'flex' : 'none';
+            const library = $('#pdf-library-wrapper');
+            if (library) {
+                library.style.display = target === 'library' ? 'flex' : 'none';
+            }
+
             if (typeof window !== 'undefined' && typeof window._onSidebarTabChange === 'function') {
                 window._onSidebarTabChange(target);
             }
@@ -32,41 +31,82 @@ export function initOutline() {
     });
 }
 
-/**
- * 加载并渲染 PDF 目录
- */
+function bindOutlineDrawer() {
+    $('#btn-toggle-pdf-outline')?.addEventListener('click', () => {
+        toggleOutlineDrawer();
+    });
+
+    $('#btn-close-pdf-outline')?.addEventListener('click', () => {
+        closeOutlineDrawer();
+    });
+}
+
+function toggleOutlineDrawer() {
+    const drawer = $('#pdf-outline-drawer');
+    const btn = $('#btn-toggle-pdf-outline');
+    if (!drawer || !btn) return;
+
+    const opening = !drawer.classList.contains('open');
+    drawer.classList.toggle('open', opening);
+    drawer.setAttribute('aria-hidden', opening ? 'false' : 'true');
+    btn.classList.toggle('active', opening);
+    btn.title = opening ? '关闭文献目录' : '文献目录';
+
+    if (opening) {
+        scheduleOutlineDrawerHeightUpdate();
+    } else {
+        drawer.style.height = '';
+    }
+}
+
+function closeOutlineDrawer() {
+    const drawer = $('#pdf-outline-drawer');
+    const btn = $('#btn-toggle-pdf-outline');
+    if (!drawer) return;
+
+    drawer.classList.remove('open');
+    drawer.setAttribute('aria-hidden', 'true');
+    drawer.style.height = '';
+
+    btn?.classList.remove('active');
+    if (btn) btn.title = '文献目录';
+}
+
 export async function loadOutline() {
     const pdfDoc = getPdfDoc();
     const container = $('#pdf-outline-tree');
+    if (!container) return;
 
     if (!pdfDoc) {
         container.innerHTML = '<p class="outline-empty">请先打开 PDF 文献</p>';
+        scheduleOutlineDrawerHeightUpdate();
         return;
     }
 
     container.innerHTML = '<p class="outline-loading">加载目录中...</p>';
+    scheduleOutlineDrawerHeightUpdate();
 
     try {
         outlineData = await pdfDoc.getOutline();
         const filteredOutline = pruneOutlineByDepth(outlineData, 0);
 
         if (!filteredOutline || filteredOutline.length === 0) {
-            container.innerHTML = '<p class="outline-empty">📄 此文档没有目录</p>';
+            container.innerHTML = '<p class="outline-empty">此文档没有目录</p>';
+            scheduleOutlineDrawerHeightUpdate();
             return;
         }
 
         container.innerHTML = '';
         const tree = await buildOutlineTree(filteredOutline, pdfDoc, 0);
         container.appendChild(tree);
+        scheduleOutlineDrawerHeightUpdate();
     } catch (err) {
         console.error('加载目录失败:', err);
-        container.innerHTML = '<p class="outline-empty">⚠️ 目录加载失败</p>';
+        container.innerHTML = '<p class="outline-empty">目录加载失败</p>';
+        scheduleOutlineDrawerHeightUpdate();
     }
 }
 
-/**
- * 递归构建目录树
- */
 async function buildOutlineTree(items, pdfDoc, depth) {
     const ul = document.createElement('ul');
     ul.className = depth === 0 ? 'outline-list outline-root' : 'outline-list outline-children';
@@ -77,16 +117,14 @@ async function buildOutlineTree(items, pdfDoc, depth) {
 
         const hasChildren = item.items && item.items.length > 0;
 
-        // 目录项行
         const row = document.createElement('div');
         row.className = 'outline-item';
-        row.style.paddingLeft = (12 + depth * 16) + 'px';
+        row.style.paddingLeft = `${12 + depth * 16}px`;
 
-        // 折叠箭头
         const arrow = document.createElement('span');
         arrow.className = 'outline-arrow';
         if (hasChildren) {
-            arrow.textContent = '▶';
+            arrow.textContent = '?';
             arrow.addEventListener('click', (e) => {
                 e.stopPropagation();
                 toggleChildren(li, arrow);
@@ -96,54 +134,44 @@ async function buildOutlineTree(items, pdfDoc, depth) {
             arrow.style.visibility = 'hidden';
         }
 
-        // 标题文本
         const title = document.createElement('span');
         title.className = 'outline-title';
-        title.textContent = item.title;
-        title.title = item.title;
+        title.textContent = item.title || '未命名章节';
+        title.title = item.title || '未命名章节';
 
-        // 页码标签
         const pageLabel = document.createElement('span');
         pageLabel.className = 'outline-page';
 
-        // 解析目标页码
         let pageNum = null;
         try {
             if (item.dest) {
-                const dest = typeof item.dest === 'string'
-                    ? await pdfDoc.getDestination(item.dest)
-                    : item.dest;
+                const dest = typeof item.dest === 'string' ? await pdfDoc.getDestination(item.dest) : item.dest;
                 if (dest && dest[0]) {
                     const pageIndex = await pdfDoc.getPageIndex(dest[0]);
                     pageNum = pageIndex + 1;
                     pageLabel.textContent = `P${pageNum}`;
                 }
             }
-        } catch (e) {
-            // 某些目录项可能无法解析页码，忽略
+        } catch (_) {
+            pageNum = null;
         }
 
         row.appendChild(arrow);
         row.appendChild(title);
         row.appendChild(pageLabel);
 
-        // 点击跳转
-        const targetPage = pageNum;
         row.addEventListener('click', () => {
-            if (targetPage) {
-                goToPage(targetPage);
-                // 高亮当前选中的目录项
-                document.querySelectorAll('.outline-item.active').forEach(el => el.classList.remove('active'));
-                row.classList.add('active');
-            }
+            if (!pageNum) return;
+            goToPage(pageNum);
+            document.querySelectorAll('.outline-item.active').forEach((el) => el.classList.remove('active'));
+            row.classList.add('active');
         });
 
         li.appendChild(row);
 
-        // 递归渲染子目录
         if (hasChildren) {
             const childTree = await buildOutlineTree(item.items, pdfDoc, depth + 1);
-            childTree.style.display = 'none'; // 默认折叠
+            childTree.style.display = 'none';
             li.appendChild(childTree);
         }
 
@@ -153,30 +181,23 @@ async function buildOutlineTree(items, pdfDoc, depth) {
     return ul;
 }
 
-/**
- * 折叠/展开子目录
- */
 function toggleChildren(li, arrow) {
     const children = li.querySelector('.outline-children');
     if (!children) return;
 
     const isHidden = children.style.display === 'none';
     children.style.display = isHidden ? 'block' : 'none';
-    arrow.textContent = isHidden ? '▼' : '▶';
+    arrow.textContent = isHidden ? '▼' : '?';
     arrow.classList.toggle('expanded', isHidden);
+    scheduleOutlineDrawerHeightUpdate();
 }
 
-/**
- * 清空目录
- */
 function pruneOutlineByDepth(items, depth) {
     if (!Array.isArray(items) || items.length === 0) return [];
     if (depth > MAX_OUTLINE_DEPTH) return [];
 
     return items.map((item) => {
-        const nextItems = item.items && item.items.length > 0
-            ? pruneOutlineByDepth(item.items, depth + 1)
-            : [];
+        const nextItems = item.items && item.items.length > 0 ? pruneOutlineByDepth(item.items, depth + 1) : [];
         return { ...item, items: nextItems };
     });
 }
@@ -186,5 +207,32 @@ export function clearOutline() {
     if (container) {
         container.innerHTML = '<p class="outline-empty">请先打开 PDF 文献</p>';
     }
+    closeOutlineDrawer();
     outlineData = null;
+}
+
+function scheduleOutlineDrawerHeightUpdate() {
+    if (heightRaf) {
+        cancelAnimationFrame(heightRaf);
+    }
+    heightRaf = requestAnimationFrame(() => {
+        heightRaf = 0;
+        updateOutlineDrawerHeight();
+    });
+}
+
+function updateOutlineDrawerHeight() {
+    const drawer = $('#pdf-outline-drawer');
+    const header = drawer?.querySelector('.pdf-outline-drawer-header');
+    const content = $('#pdf-outline-tree');
+    if (!drawer || !header || !content || !drawer.classList.contains('open')) return;
+
+    const contentHeight = content.scrollHeight || 0;
+    const headerHeight = header.getBoundingClientRect().height || 44;
+    const borderPadding = 14;
+    const desired = headerHeight + contentHeight + borderPadding;
+    const max = Math.max(220, (window.innerHeight || 900) - 90);
+    const min = 180;
+    const finalHeight = Math.max(min, Math.min(max, desired));
+    drawer.style.height = `${finalHeight}px`;
 }

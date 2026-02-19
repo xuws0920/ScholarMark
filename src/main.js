@@ -3,17 +3,20 @@
  */
 
 import { initDB } from './modules/storage.js';
-import { initPdfViewer, loadPdf, goToPage, setScale, getCurrentPage, getCurrentScale } from './modules/pdf-viewer.js';
+import { initPdfViewer, loadPdf, goToPage, setScale, fitWidth, getCurrentPage, getCurrentScale } from './modules/pdf-viewer.js';
 import { initAnnotator, setPdfId as setAnnotatorPdf, showToolbar, renderAllAnnotations, getAnnotations, navigateToAnnotation, linkAnnotationToNote, removeAnnotation } from './modules/annotator.js';
 import { initNoteEditor, setPdfId as setNoteEditorPdf, insertAnnotationRef, jumpToNoteByAnnotation, getNotes, getCurrentNote, removeAnnotationFromNotes } from './modules/note-editor.js';
-import { initSummaryEditor, setPdfId as setSummaryPdf, getCurrentSummary, clearSummaryView } from './modules/summary-editor.js';
+import { initSummaryEditor, setPdfId as setSummaryPdf, getCurrentSummary, clearSummaryView, appendToSummary } from './modules/summary-editor.js';
 import { initOverviewEditor, setPdfId as setOverviewPdf, clearOverviewView, refreshOverview } from './modules/overview-editor.js';
+import { initTranslationEditor, setPdfId as setTranslationPdf, clearTranslationView, getCurrentTranslationMarkdown, getFulltextTranslationMarkdown } from './modules/translation-editor.js';
 import { initLibrary, getPdfMeta } from './modules/library.js';
 import { initSearch } from './modules/search.js';
 import { initOutline, loadOutline, clearOutline } from './modules/outline.js';
-import { chooseDirectory, exportNoteToDir, exportAllNotes, downloadNote } from './utils/export.js';
+import { chooseDirectory, exportNoteToDir, exportAllNotes, downloadNote, getLastExportError } from './utils/export.js';
 import { $, debounce } from './utils/dom.js';
 import { renderMarkdown } from './utils/markdown.js';
+import { attachMarkdownToolbar, initMarkdownToolbars } from './utils/markdown-toolbar.js';
+import { markSaved, markSaveError } from './utils/save-status.js';
 import * as storage from './modules/storage.js';
 
 let currentPdfId = null;
@@ -32,6 +35,8 @@ let cardSortMode = localStorage.getItem('cardSortMode') === 'name' ? 'name' : 'u
 const READING_PROGRESS_PREFIX = 'readingProgress:';
 const LEFT_SIDEBAR_COLLAPSED_KEY = 'leftSidebarCollapsed';
 const LEFT_SIDEBAR_WIDTH_KEY = 'leftSidebarWidth';
+const VIEWER_TRANSLATION_SPLIT_KEY = 'viewerTranslationSplit';
+let viewerTranslationSplit = localStorage.getItem(VIEWER_TRANSLATION_SPLIT_KEY) === '1';
 const saveReadingProgressDebounced = debounce(async () => {
   await saveCurrentReadingProgress();
 }, 400);
@@ -40,6 +45,9 @@ const autoSaveNoteDebounced = debounce(async () => {
 }, 800);
 const autoSaveSummaryDebounced = debounce(async () => {
   await autoSaveCurrentSummaryToDirectory();
+}, 800);
+const autoSaveTranslationDebounced = debounce(async () => {
+  await autoSaveCurrentTranslationToDirectory();
 }, 800);
 
 async function init() {
@@ -90,6 +98,14 @@ async function init() {
     initOverviewEditor({
       onJumpToPage: (page) => goToPage(page)
     });
+    initTranslationEditor({
+      onInsertToSummary: async (markdown) => {
+        const ok = await appendToSummary(markdown, '## AI 翻译');
+        if (!ok) {
+          alert('请先打开文献总结后再插入翻译内容');
+        }
+      }
+    });
 
     await initLibrary({
       onPdfSelected: async (pdfData, meta) => {
@@ -105,6 +121,7 @@ async function init() {
         await setNoteEditorPdf(pdfData.id);
         await setSummaryPdf(pdfData.id);
         await setOverviewPdf(pdfData.id);
+        await setTranslationPdf(pdfData.id);
 
         await loadOutline();
         refreshAnnotationsList();
@@ -117,6 +134,7 @@ async function init() {
         clearOutline();
         clearSummaryView();
         clearOverviewView();
+        clearTranslationView();
         refreshCardLibrary();
       }
     });
@@ -144,10 +162,17 @@ async function init() {
     });
 
     setupUIEvents();
+    setupViewerTranslationSplit();
     setupResizeHandles();
     restoreSidebarLayoutState();
     initTheme();
     bindCardLibraryKeys();
+    initMarkdownToolbars([
+      '#note-editor',
+      '#summary-editor',
+      '#figure-clip-note',
+      '#translation-fulltext-editor'
+    ]);
 
     window._refreshAnnotations = renderAllAnnotations;
     window._refreshAnnotationsList = refreshAnnotationsList;
@@ -257,9 +282,9 @@ function setupUIEvents() {
     if (await ensureWritableDirectory(true)) {
       const meta = getPdfMeta(currentPdfId);
       const ok = await exportNoteToDir(dirHandle, meta?.name || 'unknown', note.title, note.content);
-      alert(ok ? '导出成功' : '导出失败，请重新选择存储路径');
+      alert(ok ? '导出成功（含 PDF + MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
     } else {
-      downloadNote(note.title, note.content);
+      await downloadNote(note.title, note.content);
     }
   });
 
@@ -273,9 +298,9 @@ function setupUIEvents() {
     if (await ensureWritableDirectory(true)) {
       const meta = getPdfMeta(currentPdfId);
       const count = await exportAllNotes(dirHandle, meta?.name || 'unknown', notes);
-      alert(`成功导出 ${count} 个笔记`);
+      alert(`成功导出 ${count} 个笔记（含 PDF + MD）`);
     } else {
-      for (const note of notes) downloadNote(note.title, note.content);
+      for (const note of notes) await downloadNote(note.title, note.content);
     }
   });
 
@@ -290,9 +315,9 @@ function setupUIEvents() {
     if (await ensureWritableDirectory(true)) {
       const meta = getPdfMeta(currentPdfId);
       const ok = await exportNoteToDir(dirHandle, meta?.name || 'unknown', title, summary.content || '');
-      alert(ok ? '总结导出成功' : '导出失败，请重新选择存储路径');
+      alert(ok ? '总结导出成功（含 PDF + MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
     } else {
-      downloadNote(title, summary.content || '');
+      await downloadNote(title, summary.content || '');
     }
   });
 
@@ -314,6 +339,39 @@ function setupUIEvents() {
     });
     await refreshCardLibrary(currentPdfId);
     alert('已导出为卡片（同文献会覆盖旧卡片）');
+  });
+
+  $('#btn-export-translation-current')?.addEventListener('click', async () => {
+    const content = getCurrentTranslationMarkdown();
+    if (!content.trim()) {
+      alert('暂无可导出的翻译内容');
+      return;
+    }
+    const page = getCurrentPage() || 1;
+    const title = `翻译-P${page}`;
+    if (await ensureWritableDirectory(true)) {
+      const meta = getPdfMeta(currentPdfId);
+      const ok = await exportNoteToDir(dirHandle, meta?.name || 'unknown', title, content);
+      alert(ok ? '翻译导出成功（含 PDF + MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
+    } else {
+      await downloadNote(title, content);
+    }
+  });
+
+  $('#btn-export-translation-all')?.addEventListener('click', async () => {
+    const content = getFulltextTranslationMarkdown();
+    if (!content.trim()) {
+      alert('暂无全文翻译内容');
+      return;
+    }
+    const title = '全文翻译';
+    if (await ensureWritableDirectory(true)) {
+      const meta = getPdfMeta(currentPdfId);
+      const ok = await exportNoteToDir(dirHandle, meta?.name || 'unknown', title, content);
+      alert(ok ? '全文翻译导出成功（含 PDF + MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
+    } else {
+      await downloadNote(title, content);
+    }
   });
 
   $('#btn-close-card-library')?.addEventListener('click', () => {
@@ -362,6 +420,29 @@ function setupUIEvents() {
   });
 }
 
+function setupViewerTranslationSplit() {
+  const btn = $('#btn-toggle-translation-split');
+  const container = $('#pdf-container');
+  if (!btn || !container) return;
+
+  btn.addEventListener('click', () => {
+    viewerTranslationSplit = !viewerTranslationSplit;
+    localStorage.setItem(VIEWER_TRANSLATION_SPLIT_KEY, viewerTranslationSplit ? '1' : '0');
+    applyViewerTranslationSplitState();
+    syncViewerTranslationPreview();
+    // 等待布局更新完成后重新适配 PDF 宽度
+    requestAnimationFrame(() => fitWidth());
+  });
+
+  window.addEventListener('translation:fulltext-preview-updated', (event) => {
+    const html = event?.detail?.html || '';
+    syncViewerTranslationPreview(html);
+  });
+
+  applyViewerTranslationSplitState();
+  syncViewerTranslationPreview();
+}
+
 function setupAutoSaveToDirectory() {
   if (autoSaveBound) return;
   autoSaveBound = true;
@@ -372,6 +453,10 @@ function setupAutoSaveToDirectory() {
 
   $('#summary-editor')?.addEventListener('input', () => {
     autoSaveSummaryDebounced();
+  });
+
+  $('#translation-fulltext-editor')?.addEventListener('input', () => {
+    autoSaveTranslationDebounced();
   });
 }
 
@@ -400,6 +485,7 @@ async function setDirectoryHandle(handle, requestPermission = false) {
   await storage.setSetting('dirHandleName', handle.name);
   dirPermissionState = await queryDirectoryPermission(handle, requestPermission);
   updateSavePathDisplay(handle.name, dirPermissionState);
+  markSaved('存储路径', '已保存');
 }
 
 async function queryDirectoryPermission(handle, requestPermission = false) {
@@ -456,7 +542,8 @@ async function autoSaveCurrentNoteToDirectory() {
 
   const meta = getPdfMeta(currentPdfId);
   await enqueueFileWrite(async () => {
-    await exportNoteToDir(dirHandle, meta?.name || 'unknown', note.title, note.content || '');
+    const ok = await exportNoteToDir(dirHandle, meta?.name || 'unknown', note.title, note.content || '');
+    if (!ok) throw new Error(getLastExportError() || '笔记自动保存失败');
   });
 }
 
@@ -470,7 +557,23 @@ async function autoSaveCurrentSummaryToDirectory() {
 
   const meta = getPdfMeta(currentPdfId);
   await enqueueFileWrite(async () => {
-    await exportNoteToDir(dirHandle, meta?.name || 'unknown', summary.title || '文献总结', summary.content || '');
+    const ok = await exportNoteToDir(dirHandle, meta?.name || 'unknown', summary.title || '文献总结', summary.content || '');
+    if (!ok) throw new Error(getLastExportError() || '总结自动保存失败');
+  });
+}
+
+async function autoSaveCurrentTranslationToDirectory() {
+  if (!currentPdfId) return;
+  const content = getFulltextTranslationMarkdown();
+  if (!content.trim()) return;
+
+  const writable = await ensureWritableDirectory(false);
+  if (!writable) return;
+
+  const meta = getPdfMeta(currentPdfId);
+  await enqueueFileWrite(async () => {
+    const ok = await exportNoteToDir(dirHandle, meta?.name || 'unknown', '全文翻译', content);
+    if (!ok) throw new Error(getLastExportError() || '全文翻译自动保存失败');
   });
 }
 
@@ -497,6 +600,7 @@ function applyWorkspace(workspace) {
   const isNotes = workspace === 'notes';
   const isSummary = workspace === 'summary';
   const isOverview = workspace === 'overview';
+  const isTranslation = workspace === 'translation';
 
   document.querySelectorAll('#workspace-switch .workspace-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.workspace === workspace);
@@ -508,10 +612,42 @@ function applyWorkspace(workspace) {
   $('#workspace-summary').classList.toggle('active', isSummary);
   $('#workspace-overview').style.display = isOverview ? 'flex' : 'none';
   $('#workspace-overview').classList.toggle('active', isOverview);
+  $('#workspace-translation').style.display = isTranslation ? 'flex' : 'none';
+  $('#workspace-translation').classList.toggle('active', isTranslation);
 
   $('#notes-tab-bar').style.display = isNotes ? 'flex' : 'none';
   $('#summary-tab-bar').style.display = isSummary ? 'flex' : 'none';
   $('#overview-tab-bar').style.display = isOverview ? 'flex' : 'none';
+  $('#translation-tab-bar').style.display = isTranslation ? 'flex' : 'none';
+}
+
+function applyViewerTranslationSplitState() {
+  const btn = $('#btn-toggle-translation-split');
+  const container = $('#pdf-container');
+  const pane = $('#pdf-translation-pane');
+  if (!btn || !container) return;
+
+  container.classList.toggle('split-view', viewerTranslationSplit);
+  btn.classList.toggle('active', viewerTranslationSplit);
+  btn.title = viewerTranslationSplit ? '关闭并排预览' : '并排预览全文翻译';
+  if (pane) {
+    pane.style.display = viewerTranslationSplit ? 'flex' : 'none';
+  }
+}
+
+function syncViewerTranslationPreview(nextHtml = null) {
+  const target = $('#pdf-translation-preview');
+  if (!target) return;
+
+  const html = typeof nextHtml === 'string'
+    ? nextHtml
+    : ($('#translation-fulltext-preview')?.innerHTML || '');
+
+  if (!html || !html.trim()) {
+    target.innerHTML = '<p class="empty-hint">暂无全文翻译内容</p>';
+    return;
+  }
+  target.innerHTML = html;
 }
 
 function handleSidebarTabChange(target) {
@@ -539,8 +675,10 @@ function activateSidebarTab(target) {
     const active = tab.dataset.sidebarTab === target;
     tab.classList.toggle('active', active);
   });
-  $('#pdf-library-wrapper').style.display = target === 'library' ? 'flex' : 'none';
-  $('#pdf-outline-panel').style.display = target === 'outline' ? 'flex' : 'none';
+  const library = $('#pdf-library-wrapper');
+  if (library) {
+    library.style.display = target === 'library' ? 'flex' : 'none';
+  }
 }
 
 async function refreshCardLibrary(preferPdfId = null) {
@@ -945,6 +1083,9 @@ function buildAnnotationEditor(ann) {
   questionInput.placeholder = '请输入这条标注想解决的问题';
   questionInput.value = ann.questionMd || '';
 
+  attachMarkdownToolbar(displayInput);
+  attachMarkdownToolbar(questionInput);
+
   const actions = document.createElement('div');
   actions.className = 'annotation-editor-actions';
 
@@ -977,7 +1118,13 @@ function buildAnnotationEditor(ann) {
     target.displayTextMd = displayInput.value.trim();
     target.questionMd = questionInput.value.trim();
     target.anchorText = target.anchorText || target.text || '';
-    await storage.updateAnnotation(target);
+    try {
+      await storage.updateAnnotation(target);
+      markSaved('标注', '已保存');
+    } catch (err) {
+      console.warn(err);
+      markSaveError('标注', '保存失败');
+    }
 
     editingAnnotationId = null;
     refreshAnnotationsList();

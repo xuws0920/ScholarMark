@@ -1,29 +1,18 @@
-/**
- * pdf-viewer.js — PDF 渲染与浏览模块
- * 
- * 基于 PDF.js 实现 PDF 加载、渲染、翻页、缩放
- */
-
 import * as pdfjsLib from 'pdfjs-dist';
 import { $ } from '../utils/dom.js';
 
-// 配置 PDF.js Worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
     'pdfjs-dist/build/pdf.worker.min.mjs',
     import.meta.url
 ).toString();
 
-// 状态
 let pdfDoc = null;
 let currentScale = 1.0;
 let totalPages = 0;
 let currentPage = 1;
-let pageRendering = false;
-let renderQueue = [];
-let renderedPages = new Map(); // page number -> { canvas, textLayer, highlightLayer }
+let renderedPages = new Map();
 let figureCaptureState = null;
 
-// 事件回调
 let onPageChange = null;
 let onTextSelected = null;
 let onAnnotationClick = null;
@@ -33,55 +22,43 @@ const SCALE_STEP = 0.15;
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 3.0;
 
-/**
- * 初始化 PDF Viewer
- */
 export function initPdfViewer(callbacks = {}) {
     onPageChange = callbacks.onPageChange;
     onTextSelected = callbacks.onTextSelected;
     onAnnotationClick = callbacks.onAnnotationClick;
     onScaleChange = callbacks.onScaleChange;
 
-    // 工具栏事件
-    $('#btn-prev-page').addEventListener('click', () => goToPage(currentPage - 1));
-    $('#btn-next-page').addEventListener('click', () => goToPage(currentPage + 1));
-    $('#btn-zoom-in').addEventListener('click', () => setScale(currentScale + SCALE_STEP));
-    $('#btn-zoom-out').addEventListener('click', () => setScale(currentScale - SCALE_STEP));
-    $('#btn-fit-width').addEventListener('click', fitWidth);
+    $('#btn-prev-page')?.addEventListener('click', () => goToPage(currentPage - 1));
+    $('#btn-next-page')?.addEventListener('click', () => goToPage(currentPage + 1));
+    $('#btn-zoom-in')?.addEventListener('click', () => setScale(currentScale + SCALE_STEP));
+    $('#btn-zoom-out')?.addEventListener('click', () => setScale(currentScale - SCALE_STEP));
+    $('#btn-fit-width')?.addEventListener('click', fitWidth);
 
-    $('#page-num-input').addEventListener('change', (e) => {
-        const page = parseInt(e.target.value);
-        if (page >= 1 && page <= totalPages) {
+    $('#page-num-input')?.addEventListener('change', (e) => {
+        const page = parseInt(e.target.value, 10);
+        if (Number.isFinite(page) && page >= 1 && page <= totalPages) {
             goToPage(page);
         } else {
-            e.target.value = currentPage;
+            e.target.value = String(currentPage);
         }
     });
 
-    // 监听滚动以更新当前页码
-    const container = $('#pdf-container');
-    container.addEventListener('scroll', handleScroll);
-
-    // 监听文本选择
+    $('#pdf-container')?.addEventListener('scroll', handleScroll);
+    $('#pdf-pages')?.addEventListener('scroll', handleScroll);
     document.addEventListener('mouseup', handleTextSelection);
 }
 
-/**
- * 加载 PDF 文件
- */
 export async function loadPdf(arrayBuffer) {
-    // 清理旧的渲染
     clearRenderedPages();
 
-    const container = $('#pdf-pages');
-    container.innerHTML = '';
+    const pages = $('#pdf-pages');
+    if (!pages) return null;
+    pages.innerHTML = '';
 
-    // 隐藏欢迎页
     const welcome = $('#welcome-screen');
     if (welcome) welcome.style.display = 'none';
 
-    // 显示加载状态
-    container.innerHTML = '<div class="pdf-loading"><div class="spinner"></div><span>加载中...</span></div>';
+    pages.innerHTML = '<div class="pdf-loading"><div class="spinner"></div><span>加载中...</span></div>';
 
     try {
         const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
@@ -89,34 +66,27 @@ export async function loadPdf(arrayBuffer) {
         totalPages = pdfDoc.numPages;
         currentPage = 1;
 
-        // 更新 UI
-        $('#page-count').textContent = totalPages;
-        $('#page-num-input').max = totalPages;
+        $('#page-count').textContent = String(totalPages);
+        $('#page-num-input').max = String(totalPages);
         updateToolbarState();
 
-        // 清空加载状态
-        container.innerHTML = '';
-
-        // 渲染所有页面（懒加载方式，先渲染可视区域）
+        pages.innerHTML = '';
         await renderAllPages();
-
         return pdfDoc;
     } catch (err) {
-        container.innerHTML = `<div class="pdf-loading"><span>⚠️ PDF 加载失败: ${err.message}</span></div>`;
+        pages.innerHTML = `<div class="pdf-loading"><span>PDF 加载失败: ${err?.message || '未知错误'}</span></div>`;
         throw err;
     }
 }
 
-/**
- * 渲染所有页面
- */
 async function renderAllPages() {
-    const container = $('#pdf-pages');
+    const pages = $('#pdf-pages');
+    if (!pages) return;
 
-    for (let i = 1; i <= totalPages; i++) {
+    for (let i = 1; i <= totalPages; i += 1) {
         const wrapper = document.createElement('div');
         wrapper.className = 'pdf-page-wrapper';
-        wrapper.dataset.page = i;
+        wrapper.dataset.page = String(i);
         wrapper.id = `page-${i}`;
 
         const canvas = document.createElement('canvas');
@@ -136,84 +106,67 @@ async function renderAllPages() {
         pageLabel.className = 'page-number-label';
         pageLabel.textContent = `${i} / ${totalPages}`;
 
-        container.appendChild(wrapper);
-        container.appendChild(pageLabel);
-
+        pages.appendChild(wrapper);
+        pages.appendChild(pageLabel);
         renderedPages.set(i, { wrapper, canvas, textLayer, highlightLayer });
     }
 
-    // 渲染所有页面
-    for (let i = 1; i <= totalPages; i++) {
+    for (let i = 1; i <= totalPages; i += 1) {
         await renderPage(i);
     }
 }
 
-/**
- * 渲染单页
- */
 async function renderPage(pageNum) {
     if (!pdfDoc) return;
+    if (!Number.isFinite(currentScale) || currentScale <= 0) currentScale = 1.0;
 
     const page = await pdfDoc.getPage(pageNum);
     const viewport = page.getViewport({ scale: currentScale });
 
-    const { canvas, textLayer, highlightLayer, wrapper } = renderedPages.get(pageNum);
-    const ctx = canvas.getContext('2d');
+    const pageData = renderedPages.get(pageNum);
+    if (!pageData) return;
 
-    // 设置 canvas 尺寸（考虑设备像素比）
+    const { canvas, textLayer, highlightLayer, wrapper } = pageData;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = viewport.width * dpr;
-    canvas.height = viewport.height * dpr;
-    canvas.style.width = viewport.width + 'px';
-    canvas.style.height = viewport.height + 'px';
+    canvas.width = Math.max(1, Math.floor(viewport.width * dpr));
+    canvas.height = Math.max(1, Math.floor(viewport.height * dpr));
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(dpr, dpr);
 
-    // 设置容器尺寸
-    wrapper.style.width = viewport.width + 'px';
-    wrapper.style.height = viewport.height + 'px';
+    wrapper.style.width = `${viewport.width}px`;
+    wrapper.style.height = `${viewport.height}px`;
 
-    // 渲染 PDF 页面到 canvas
-    await page.render({
-        canvasContext: ctx,
-        viewport: viewport
-    }).promise;
+    await page.render({ canvasContext: ctx, viewport }).promise;
 
-    // 渲染文本层
     textLayer.innerHTML = '';
-    textLayer.style.width = viewport.width + 'px';
-    textLayer.style.height = viewport.height + 'px';
-    highlightLayer.style.width = viewport.width + 'px';
-    highlightLayer.style.height = viewport.height + 'px';
+    textLayer.style.width = `${viewport.width}px`;
+    textLayer.style.height = `${viewport.height}px`;
+    highlightLayer.style.width = `${viewport.width}px`;
+    highlightLayer.style.height = `${viewport.height}px`;
 
     const textContent = await page.getTextContent();
-    const textItems = textContent.items;
-
-    for (const item of textItems) {
+    for (const item of textContent.items) {
         const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
-
         const span = document.createElement('span');
         span.textContent = item.str;
-        span.style.left = tx[4] + 'px';
-        span.style.top = (tx[5] - item.height) + 'px';
-        span.style.fontSize = Math.abs(tx[3]) + 'px';
+        span.style.left = `${tx[4]}px`;
+        span.style.top = `${tx[5] - item.height}px`;
+        span.style.fontSize = `${Math.abs(tx[3])}px`;
         span.style.fontFamily = item.fontName || 'sans-serif';
-
-        // 计算文本宽度，如有必要进行拉伸
         if (item.width > 0) {
-            span.style.width = item.width * viewport.scale + 'px';
-            // 使用 scaleX transform 来适配宽度
+            span.style.width = `${item.width * viewport.scale}px`;
         }
-
         textLayer.appendChild(span);
     }
 }
 
-/**
- * 跳转到指定页面
- */
 export function goToPage(pageNum) {
     if (pageNum < 1 || pageNum > totalPages) return;
-
     currentPage = pageNum;
     updateToolbarState();
 
@@ -225,61 +178,58 @@ export function goToPage(pageNum) {
     if (onPageChange) onPageChange(pageNum);
 }
 
-/**
- * 设置缩放
- */
 export async function setScale(scale) {
+    if (!Number.isFinite(scale)) return;
     scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, scale));
+    if (!Number.isFinite(scale)) return;
     if (Math.abs(scale - currentScale) < 0.01) return;
 
     currentScale = scale;
-    $('#zoom-level').textContent = Math.round(scale * 100) + '%';
+    $('#zoom-level').textContent = `${Math.round(scale * 100)}%`;
 
-    // 重新渲染所有页面
-    for (let i = 1; i <= totalPages; i++) {
+    for (let i = 1; i <= totalPages; i += 1) {
         await renderPage(i);
     }
 
-    // 刷新标注显示
-    if (window._refreshAnnotations) {
-        window._refreshAnnotations();
-    }
-
+    if (window._refreshAnnotations) window._refreshAnnotations();
     if (onScaleChange) onScaleChange(currentScale);
 }
 
-/**
- * 适应宽度
- */
-function fitWidth() {
+export function fitWidth() {
     if (!pdfDoc) return;
 
-    const container = $('#pdf-container');
-    const containerWidth = container.clientWidth - 60; // 减去 padding
+    const scrollHost = getPdfScrollHost();
+    const widthBase = scrollHost?.getBoundingClientRect().width || 0;
+    if (!Number.isFinite(widthBase) || widthBase <= 80) return;
 
-    pdfDoc.getPage(1).then(page => {
+    const targetWidth = Math.max(120, widthBase - 60);
+    pdfDoc.getPage(1).then((page) => {
         const viewport = page.getViewport({ scale: 1.0 });
-        const newScale = containerWidth / viewport.width;
-        setScale(newScale);
+        if (!Number.isFinite(viewport.width) || viewport.width <= 1) return;
+        const nextScale = targetWidth / viewport.width;
+        if (!Number.isFinite(nextScale) || nextScale <= 0) return;
+        setScale(nextScale);
     });
 }
 
-/**
- * 滚动时更新当前页码
- */
-function handleScroll() {
+function getPdfScrollHost() {
     const container = $('#pdf-container');
-    const scrollTop = container.scrollTop;
-    const containerHeight = container.clientHeight;
+    const pages = $('#pdf-pages');
+    if (container?.classList.contains('split-view')) return pages || container;
+    return container;
+}
 
-    for (let i = 1; i <= totalPages; i++) {
+function handleScroll() {
+    const scrollHost = getPdfScrollHost();
+    if (!scrollHost) return;
+
+    const hostRect = scrollHost.getBoundingClientRect();
+    for (let i = 1; i <= totalPages; i += 1) {
         const wrapper = $(`#page-${i}`);
         if (!wrapper) continue;
-
         const rect = wrapper.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
 
-        if (rect.top < containerRect.bottom && rect.bottom > containerRect.top) {
+        if (rect.top < hostRect.bottom && rect.bottom > hostRect.top) {
             if (currentPage !== i) {
                 currentPage = i;
                 updateToolbarState();
@@ -290,19 +240,12 @@ function handleScroll() {
     }
 }
 
-/**
- * 文本选择处理
- */
-function handleTextSelection(e) {
-    if (figureCaptureState?.active) {
-        return;
-    }
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !selection.toString().trim()) {
-        return;
-    }
+function handleTextSelection() {
+    if (figureCaptureState?.active) return;
 
-    // 检查选中是否在 PDF 文本层内
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.toString().trim()) return;
+
     const range = selection.getRangeAt(0);
     const textLayer = range.startContainer.parentElement?.closest('.text-layer');
     if (!textLayer) return;
@@ -310,33 +253,27 @@ function handleTextSelection(e) {
     const pageWrapper = textLayer.closest('.pdf-page-wrapper');
     if (!pageWrapper) return;
 
-    const pageNum = parseInt(pageWrapper.dataset.page);
+    const pageNum = parseInt(pageWrapper.dataset.page || '1', 10);
     const selectedText = selection.toString().trim();
-
-    // 获取选中区域的坐标（相对于页面）
     const rects = getSelectionRects(range, pageWrapper);
 
     if (onTextSelected) {
         onTextSelected({
             text: selectedText,
             page: pageNum,
-            rects: rects,
-            range: range
+            rects,
+            range
         });
     }
 }
 
-/**
- * 获取选中区域相对于页面的坐标（归一化到 scale=1.0）
- */
 function getSelectionRects(range, pageWrapper) {
     const clientRects = range.getClientRects();
     const wrapperRect = pageWrapper.getBoundingClientRect();
-    const rects = [];
     const scale = currentScale || 1.0;
+    const rects = [];
 
     for (const rect of clientRects) {
-        // 归一化到 scale=1.0，存储时不受当前缩放影响
         rects.push({
             x: (rect.left - wrapperRect.left) / scale,
             y: (rect.top - wrapperRect.top) / scale,
@@ -348,9 +285,6 @@ function getSelectionRects(range, pageWrapper) {
     return rects;
 }
 
-/**
- * 在指定页面的高亮层添加标注
- */
 export function addHighlightToPage(pageNum, annotation) {
     const pageData = renderedPages.get(pageNum);
     if (!pageData) return;
@@ -362,60 +296,44 @@ export function addHighlightToPage(pageNum, annotation) {
         const mark = document.createElement('div');
         mark.className = 'highlight-mark';
         mark.dataset.annotationId = annotation.id;
-        // 坐标按当前缩放比例渲染（rect 存储的是 scale=1.0 的归一化坐标）
-        mark.style.left = (rect.x * scale) + 'px';
-        mark.style.top = (rect.y * scale) + 'px';
-        mark.style.width = (rect.w * scale) + 'px';
-        mark.style.height = (rect.h * scale) + 'px';
-        mark.style.backgroundColor = annotation.color + '55'; // 半透明
+        mark.style.left = `${rect.x * scale}px`;
+        mark.style.top = `${rect.y * scale}px`;
+        mark.style.width = `${rect.w * scale}px`;
+        mark.style.height = `${rect.h * scale}px`;
+        mark.style.backgroundColor = `${annotation.color}55`;
         mark.style.color = annotation.color;
 
-        // 点击标注 → 显示上下文菜单
         mark.addEventListener('click', (e) => {
             e.stopPropagation();
-            if (onAnnotationClick) {
-                onAnnotationClick(annotation, e);
-            }
+            if (onAnnotationClick) onAnnotationClick(annotation, e);
         });
 
         highlightLayer.appendChild(mark);
     }
 }
 
-/**
- * 清除指定页面的所有高亮
- */
 export function clearHighlightsOnPage(pageNum) {
     const pageData = renderedPages.get(pageNum);
     if (!pageData) return;
     pageData.highlightLayer.innerHTML = '';
 }
 
-/**
- * 清除所有页面的高亮
- */
 export function clearAllHighlights() {
-    for (const [pageNum, pageData] of renderedPages) {
+    for (const [, pageData] of renderedPages) {
         pageData.highlightLayer.innerHTML = '';
     }
 }
 
-/**
- * 让指定标注闪烁高亮
- */
 export function flashAnnotation(annotationId) {
     const marks = document.querySelectorAll(`[data-annotation-id="${annotationId}"]`);
-    marks.forEach(mark => {
+    marks.forEach((mark) => {
         mark.classList.add('flash-highlight');
         setTimeout(() => mark.classList.remove('flash-highlight'), 1500);
     });
 }
 
-/**
- * 更新工具栏状态
- */
 function updateToolbarState() {
-    $('#page-num-input').value = currentPage;
+    $('#page-num-input').value = String(currentPage);
     $('#btn-prev-page').disabled = currentPage <= 1;
     $('#btn-next-page').disabled = currentPage >= totalPages;
 }
@@ -429,20 +347,18 @@ function clearRenderedPages() {
 }
 
 export function startFigureClipCapture(callbacks = {}) {
-    if (!pdfDoc || !renderedPages.size) return false;
-    if (figureCaptureState?.active) return true;
+    if (!pdfDoc || !renderedPages.size || figureCaptureState?.active) return false;
 
-    const container = $('#pdf-container');
+    const container = getPdfScrollHost();
     if (!container) return false;
 
-    const state = {
+    figureCaptureState = {
         active: true,
         container,
         current: null,
         onCaptured: callbacks.onCaptured || null,
-        onCancel: callbacks.onCancel || null,
+        onCancel: callbacks.onCancel || null
     };
-    figureCaptureState = state;
 
     container.classList.add('figure-capture-active');
     container.addEventListener('mousedown', handleCaptureMouseDown);
@@ -462,7 +378,7 @@ export function cancelFigureClipCapture() {
     state.container?.removeEventListener('mouseup', handleCaptureMouseUp);
     document.removeEventListener('keydown', handleCaptureKeyDown);
 
-    if (state.current?.rectEl && state.current.rectEl.parentElement) {
+    if (state.current?.rectEl?.parentElement) {
         state.current.rectEl.parentElement.removeChild(state.current.rectEl);
     }
 
@@ -488,7 +404,7 @@ function handleCaptureMouseDown(e) {
     e.preventDefault();
     window.getSelection()?.removeAllRanges();
 
-    const page = parseInt(wrapper.dataset.page, 10);
+    const page = parseInt(wrapper.dataset.page || '1', 10);
     const wrapperRect = wrapper.getBoundingClientRect();
     const startX = clamp(e.clientX - wrapperRect.left, 0, wrapperRect.width);
     const startY = clamp(e.clientY - wrapperRect.top, 0, wrapperRect.height);
@@ -549,9 +465,7 @@ function handleCaptureMouseUp(e) {
     const { wrapper, rectEl, page, x, y, width, height } = current;
     state.current = null;
 
-    if (rectEl?.parentElement) {
-        rectEl.parentElement.removeChild(rectEl);
-    }
+    if (rectEl?.parentElement) rectEl.parentElement.removeChild(rectEl);
 
     if (width < 12 || height < 12) {
         cancelFigureClipCapture();
@@ -576,7 +490,7 @@ function handleCaptureMouseUp(e) {
                 x: x / w,
                 y: y / h,
                 w: width / w,
-                h: height / h,
+                h: height / h
             }
         });
     }
@@ -613,7 +527,29 @@ function clamp(v, min, max) {
     return Math.max(min, Math.min(max, v));
 }
 
-export function getCurrentPage() { return currentPage; }
-export function getTotalPages() { return totalPages; }
-export function getCurrentScale() { return currentScale; }
-export function getPdfDoc() { return pdfDoc; }
+export function capturePageImage(pageNum = currentPage) {
+    const pageData = renderedPages.get(pageNum);
+    if (!pageData?.canvas) return '';
+    try {
+        return pageData.canvas.toDataURL('image/png');
+    } catch (err) {
+        console.warn('Capture page image failed:', err);
+        return '';
+    }
+}
+
+export function getCurrentPage() {
+    return currentPage;
+}
+
+export function getTotalPages() {
+    return totalPages;
+}
+
+export function getCurrentScale() {
+    return currentScale;
+}
+
+export function getPdfDoc() {
+    return pdfDoc;
+}

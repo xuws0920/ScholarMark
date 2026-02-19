@@ -69,3 +69,15 @@
 ## 待优化项
 - 浏览器测试工具暂不可用，需要用户手动在浏览器中测试
 - 后续可根据实际使用反馈优化 UI 细节
+
+---
+
+## 最新修复记录
+
+### 2026-02-20：修复双页视图原文 PDF 不显示问题
+- **问题**：切换到双页（split-view）模式后，左侧原文 PDF 页面被压缩到接近 0 高度
+- **根因**：`.pdf-page-wrapper` 在 flex column 布局中默认 `flex-shrink: 1`，split-view 模式下 `#pdf-pages` 高度被约束，所有页面 wrapper 被 flex 压缩
+- **修复**：
+  - `pdf-viewer.css`：给 `.pdf-page-wrapper` 和 `.page-number-label` 添加 `flex-shrink: 0`
+  - `pdf-viewer.js`：导出 `fitWidth` 函数
+  - `main.js`：切换 split-view 后调用 `fitWidth()` 重新适配宽度

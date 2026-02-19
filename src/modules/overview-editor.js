@@ -1,4 +1,5 @@
 ﻿import { $, debounce } from '../utils/dom.js';
+import { markSaved, markSaveError } from '../utils/save-status.js';
 import * as storage from './storage.js';
 import { getCurrentPage, getTotalPages, startFigureClipCapture, cancelFigureClipCapture } from './pdf-viewer.js';
 
@@ -336,12 +337,18 @@ async function saveSelectedClip(showHint = false) {
   clip.tags = tagsRaw ? tagsRaw.split(',').map((x) => x.trim()).filter(Boolean) : [];
   clip.noteMd = noteMd;
 
-  const updated = await storage.updateFigureClip(clip);
-  const idx = clips.findIndex((x) => x.id === updated.id);
-  if (idx >= 0) clips[idx] = updated;
+  try {
+    const updated = await storage.updateFigureClip(clip);
+    const idx = clips.findIndex((x) => x.id === updated.id);
+    if (idx >= 0) clips[idx] = updated;
 
-  renderClipsList();
-  await refreshOverview();
+    renderClipsList();
+    await refreshOverview();
+    markSaved('图表摘录', '已保存');
+  } catch (err) {
+    console.warn(err);
+    markSaveError('图表摘录', '保存失败');
+  }
 
   if (showHint) {
     alert('图表摘录已保存');
@@ -416,3 +423,4 @@ function formatDateTime(isoString) {
   if (Number.isNaN(d.getTime())) return '暂无';
   return d.toLocaleString();
 }
+

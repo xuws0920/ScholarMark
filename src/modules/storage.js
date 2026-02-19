@@ -5,7 +5,7 @@
  */
 
 const DB_NAME = 'ScholarMarkDB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 let db = null;
 
@@ -61,6 +61,27 @@ export function initDB() {
                 clipStore.createIndex('pdfId', 'pdfId', { unique: false });
                 clipStore.createIndex('pdfId_page', ['pdfId', 'page'], { unique: false });
                 clipStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+            }
+
+            if (!database.objectStoreNames.contains('translations')) {
+                const translationStore = database.createObjectStore('translations', { keyPath: 'id' });
+                translationStore.createIndex('pdfId', 'pdfId', { unique: false });
+                translationStore.createIndex('pdfId_page', ['pdfId', 'page'], { unique: false });
+                translationStore.createIndex('sourceType', 'sourceType', { unique: false });
+                translationStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+            }
+
+            if (!database.objectStoreNames.contains('translationCache')) {
+                const cacheStore = database.createObjectStore('translationCache', { keyPath: 'id' });
+                cacheStore.createIndex('pdfId', 'pdfId', { unique: false });
+                cacheStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+            }
+
+            if (!database.objectStoreNames.contains('translationJobs')) {
+                const jobsStore = database.createObjectStore('translationJobs', { keyPath: 'id' });
+                jobsStore.createIndex('pdfId', 'pdfId', { unique: false });
+                jobsStore.createIndex('status', 'status', { unique: false });
+                jobsStore.createIndex('updatedAt', 'updatedAt', { unique: false });
             }
 
             if (!database.objectStoreNames.contains('settings')) {
@@ -135,7 +156,11 @@ export function deletePdf(id) {
             const clips = await getFigureClipsByPdf(id);
 
             const card = await getSummaryCardByPdf(id);
-            const tx = db.transaction(['pdfs', 'annotations', 'notes', 'summaries', 'figureClips', 'summaryCards'], 'readwrite');
+            const translations = await getTranslationsByPdf(id);
+            const jobs = await getTranslationJobsByPdf(id);
+            const caches = await getTranslationCachesByPdf(id);
+
+            const tx = db.transaction(['pdfs', 'annotations', 'notes', 'summaries', 'figureClips', 'summaryCards', 'translations', 'translationJobs', 'translationCache'], 'readwrite');
             tx.objectStore('pdfs').delete(id);
             for (const ann of annotations) {
                 tx.objectStore('annotations').delete(ann.id);
@@ -151,6 +176,15 @@ export function deletePdf(id) {
             }
             for (const clip of clips) {
                 tx.objectStore('figureClips').delete(clip.id);
+            }
+            for (const translation of translations) {
+                tx.objectStore('translations').delete(translation.id);
+            }
+            for (const job of jobs) {
+                tx.objectStore('translationJobs').delete(job.id);
+            }
+            for (const cache of caches) {
+                tx.objectStore('translationCache').delete(cache.id);
             }
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
@@ -460,6 +494,186 @@ export function deleteFigureClip(id) {
 }
 
 // ==================== 设置相关 ====================
+
+export function addTranslation(translation) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translations', 'readwrite');
+        const store = tx.objectStore('translations');
+        const now = new Date().toISOString();
+        const record = {
+            id: translation.id || generateId(),
+            pdfId: translation.pdfId,
+            page: translation.page || 1,
+            sourceType: translation.sourceType || 'image_clip',
+            imageHash: translation.imageHash || '',
+            sourceImageDataUrl: translation.sourceImageDataUrl || '',
+            sourceText: translation.sourceText || '',
+            bilingualMd: translation.bilingualMd || '',
+            formulaNotes: translation.formulaNotes || '',
+            terminologyWarnings: translation.terminologyWarnings || [],
+            archivedToFulltext: !!translation.archivedToFulltext,
+            provider: translation.provider || 'openai_compatible',
+            model: translation.model || '',
+            promptVersion: translation.promptVersion || 'v1',
+            terminologyVersion: translation.terminologyVersion || 'v1',
+            usage: translation.usage || null,
+            error: translation.error || '',
+            createdAt: now,
+            updatedAt: now
+        };
+        const req = store.put(record);
+        req.onsuccess = () => resolve(record);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function updateTranslation(translation) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translations', 'readwrite');
+        const store = tx.objectStore('translations');
+        const next = { ...translation, updatedAt: new Date().toISOString() };
+        const req = store.put(next);
+        req.onsuccess = () => resolve(next);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function deleteTranslation(id) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translations', 'readwrite');
+        const store = tx.objectStore('translations');
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getTranslation(id) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translations', 'readonly');
+        const store = tx.objectStore('translations');
+        const req = store.get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getTranslationsByPdf(pdfId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translations', 'readonly');
+        const store = tx.objectStore('translations');
+        const index = store.index('pdfId');
+        const req = index.getAll(pdfId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function upsertTranslationCache(cache) {
+    const now = new Date().toISOString();
+    const existing = await getTranslationCache(cache.id);
+    const record = {
+        id: cache.id,
+        pdfId: cache.pdfId || '',
+        page: cache.page || 1,
+        imageHash: cache.imageHash || '',
+        provider: cache.provider || 'openai_compatible',
+        model: cache.model || '',
+        promptVersion: cache.promptVersion || 'v1',
+        terminologyVersion: cache.terminologyVersion || 'v1',
+        bilingualMd: cache.bilingualMd || '',
+        formulaNotes: cache.formulaNotes || '',
+        terminologyWarnings: cache.terminologyWarnings || [],
+        usage: cache.usage || null,
+        createdAt: existing?.createdAt || now,
+        updatedAt: now
+    };
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translationCache', 'readwrite');
+        const store = tx.objectStore('translationCache');
+        const req = store.put(record);
+        req.onsuccess = () => resolve(record);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getTranslationCache(id) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translationCache', 'readonly');
+        const store = tx.objectStore('translationCache');
+        const req = store.get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getTranslationCachesByPdf(pdfId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translationCache', 'readonly');
+        const store = tx.objectStore('translationCache');
+        const index = store.index('pdfId');
+        const req = index.getAll(pdfId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function upsertTranslationJob(job) {
+    const now = new Date().toISOString();
+    const existing = job?.id ? await getTranslationJob(job.id) : null;
+    const record = {
+        id: job.id || generateId(),
+        pdfId: job.pdfId,
+        mode: job.mode || 'fulltext_range',
+        rangeStart: job.rangeStart || 1,
+        rangeEnd: job.rangeEnd || 1,
+        status: job.status || 'pending',
+        progress: job.progress || { done: 0, total: 0, failedPages: [] },
+        error: job.error || '',
+        createdAt: existing?.createdAt || now,
+        updatedAt: now
+    };
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translationJobs', 'readwrite');
+        const store = tx.objectStore('translationJobs');
+        const req = store.put(record);
+        req.onsuccess = () => resolve(record);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getTranslationJob(id) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translationJobs', 'readonly');
+        const store = tx.objectStore('translationJobs');
+        const req = store.get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getTranslationJobsByPdf(pdfId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translationJobs', 'readonly');
+        const store = tx.objectStore('translationJobs');
+        const index = store.index('pdfId');
+        const req = index.getAll(pdfId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function deleteTranslationJob(id) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('translationJobs', 'readwrite');
+        const store = tx.objectStore('translationJobs');
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
 
 export function getSetting(key) {
     return new Promise((resolve, reject) => {

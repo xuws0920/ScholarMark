@@ -4,6 +4,7 @@
 
 import { $, debounce } from '../utils/dom.js';
 import { renderMarkdown } from '../utils/markdown.js';
+import { markSaved, markSaveError } from '../utils/save-status.js';
 import * as storage from './storage.js';
 
 let currentPdfId = null;
@@ -14,7 +15,8 @@ let activeOutlineId = null;
 
 let onAnnotationRefClick = null;
 
-const OUTLINE_COLLAPSED_KEY = 'notes-outline-collapsed';
+const OUTLINE_DRAWER_OPEN_KEY = 'notes-outline-drawer-open';
+let outlineHeightRaf = 0;
 
 export function initNoteEditor(callbacks = {}) {
   onAnnotationRefClick = callbacks.onAnnotationRefClick;
@@ -50,10 +52,16 @@ export function initNoteEditor(callbacks = {}) {
     editor.dispatchEvent(new Event('input', { bubbles: true }));
   });
 
-  editor.addEventListener('input', debounce(() => {
+  editor.addEventListener('input', debounce(async () => {
     if (!currentNote) return;
     currentNote.content = editor.value;
-    storage.updateNote(currentNote);
+    try {
+      await storage.updateNote(currentNote);
+      markSaved('笔记', '已保存');
+    } catch (err) {
+      console.warn(err);
+      markSaveError('笔记', '保存失败');
+    }
     refreshNotesOutline(editor.value);
   }, 500));
 
@@ -85,11 +93,13 @@ export function initNoteEditor(callbacks = {}) {
     jumpToOutlineItem(item);
   });
 
-  $('#btn-toggle-notes-outline')?.addEventListener('click', () => {
-    toggleNotesOutlineCollapsed();
+  $('#btn-open-notes-outline')?.addEventListener('click', () => {
+    toggleNotesOutlineDrawer();
   });
+  $('#btn-toggle-notes-outline')?.addEventListener('click', closeNotesOutlineDrawer);
 
-  restoreNotesOutlineCollapsedState();
+  restoreNotesOutlineDrawerState();
+  window.addEventListener('resize', scheduleNotesOutlineHeightUpdate);
   const activeTab = document.querySelector('#notes-tab-bar .tab-btn.active')?.dataset.tab || 'editor';
   updateOutlineVisibilityByTab(activeTab);
 }
@@ -172,9 +182,11 @@ export async function insertAnnotationRef(annotation) {
     currentNote.linkedAnnotationIds.push(annotation.id);
   }
   await storage.updateNote(currentNote);
+  markSaved('笔记', '已保存');
 
   annotation.noteId = currentNote.id;
   await storage.updateAnnotation(annotation);
+  markSaved('标注关联', '已保存');
 
   editor.focus();
   editor.selectionStart = editor.selectionEnd = pos + refText.length;
@@ -201,6 +213,7 @@ export async function removeAnnotationFromNotes(annotationId) {
     note.content = cleaned;
     note.linkedAnnotationIds = linked.filter((id) => id !== annotationId);
     await storage.updateNote(note);
+    markSaved('笔记', '已保存');
 
     if (currentNote && currentNote.id === note.id) {
       currentNote.content = note.content;
@@ -267,6 +280,7 @@ function refreshNotesOutline(content) {
   if (noteOutlineItems.length === 0) {
     list.innerHTML = '<p class="empty-hint">暂无目录项</p>';
     activeOutlineId = null;
+    scheduleNotesOutlineHeightUpdate();
     return;
   }
 
@@ -282,6 +296,7 @@ function refreshNotesOutline(content) {
     btn.innerHTML = `<span class="notes-outline-item-page">P${item.page}</span>${escapeHtml(item.shortText)}`;
     list.appendChild(btn);
   }
+  scheduleNotesOutlineHeightUpdate();
 }
 
 function parseNoteOutlineItems(content) {
@@ -641,32 +656,69 @@ function highlightActiveOutlineItem() {
 }
 
 function updateOutlineVisibilityByTab(tab) {
-  const layout = $('#notes-content-layout');
-  if (!layout) return;
-  layout.classList.toggle('hide-outline', tab === 'annotations');
+  if (tab === 'annotations') {
+    closeNotesOutlineDrawer();
+  }
 }
 
-function toggleNotesOutlineCollapsed() {
+function toggleNotesOutlineDrawer() {
   const panel = $('#notes-outline-panel');
-  const btn = $('#btn-toggle-notes-outline');
-  if (!panel || !btn) return;
-
-  panel.classList.toggle('collapsed');
-  const collapsed = panel.classList.contains('collapsed');
-  btn.textContent = collapsed ? '⟩' : '⟨';
-  btn.title = collapsed ? '展开目录' : '折叠目录';
-  localStorage.setItem(OUTLINE_COLLAPSED_KEY, collapsed ? '1' : '0');
+  const opener = $('#btn-open-notes-outline');
+  if (!panel) return;
+  const opening = !panel.classList.contains('open');
+  panel.classList.toggle('open', opening);
+  panel.setAttribute('aria-hidden', opening ? 'false' : 'true');
+  if (opener) opener.classList.toggle('active', opening);
+  localStorage.setItem(OUTLINE_DRAWER_OPEN_KEY, opening ? '1' : '0');
+  if (opening) {
+    scheduleNotesOutlineHeightUpdate();
+  } else {
+    panel.style.height = '';
+  }
 }
 
-function restoreNotesOutlineCollapsedState() {
+function closeNotesOutlineDrawer() {
   const panel = $('#notes-outline-panel');
-  const btn = $('#btn-toggle-notes-outline');
-  if (!panel || !btn) return;
+  const opener = $('#btn-open-notes-outline');
+  if (!panel) return;
+  panel.classList.remove('open');
+  panel.setAttribute('aria-hidden', 'true');
+  panel.style.height = '';
+  if (opener) opener.classList.remove('active');
+  localStorage.setItem(OUTLINE_DRAWER_OPEN_KEY, '0');
+}
 
-  const collapsed = localStorage.getItem(OUTLINE_COLLAPSED_KEY) === '1';
-  panel.classList.toggle('collapsed', collapsed);
-  btn.textContent = collapsed ? '⟩' : '⟨';
-  btn.title = collapsed ? '展开目录' : '折叠目录';
+function restoreNotesOutlineDrawerState() {
+  const shouldOpen = localStorage.getItem(OUTLINE_DRAWER_OPEN_KEY) === '1';
+  if (shouldOpen) {
+    toggleNotesOutlineDrawer();
+  } else {
+    closeNotesOutlineDrawer();
+  }
+}
+
+function scheduleNotesOutlineHeightUpdate() {
+  if (outlineHeightRaf) {
+    cancelAnimationFrame(outlineHeightRaf);
+  }
+  outlineHeightRaf = requestAnimationFrame(() => {
+    outlineHeightRaf = 0;
+    updateNotesOutlineDrawerHeight();
+  });
+}
+
+function updateNotesOutlineDrawerHeight() {
+  const drawer = $('#notes-outline-panel');
+  const header = drawer?.querySelector('.notes-outline-header');
+  const list = $('#notes-outline-list');
+  if (!drawer || !header || !list || !drawer.classList.contains('open')) return;
+
+  const contentHeight = list.scrollHeight || 0;
+  const headerHeight = header.getBoundingClientRect().height || 42;
+  const desired = headerHeight + contentHeight + 14;
+  const max = Math.max(220, (window.innerHeight || 900) - 130);
+  const min = 180;
+  drawer.style.height = `${Math.max(min, Math.min(max, desired))}px`;
 }
 
 function countNewLines(text, endIndex) {
