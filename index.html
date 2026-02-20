@@ -29,11 +29,12 @@
       </div>
       <div class="header-right">
         <button id="btn-toggle-theme" class="header-btn" title="切换主题">
-          <svg id="icon-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <svg id="icon-dark" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
           </svg>
-          <svg id="icon-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-            style="display:none;">
+          <svg id="icon-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+            stroke-width="2" style="display:none;">
             <circle cx="12" cy="12" r="5" />
             <line x1="12" y1="1" x2="12" y2="3" />
             <line x1="12" y1="21" x2="12" y2="23" />
@@ -76,7 +77,8 @@
 
         <div id="pdf-library-wrapper" class="sidebar-panel">
           <div class="search-box">
-            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2">
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -180,6 +182,7 @@
               <p class="outline-empty">请先打开 PDF 文献</p>
             </div>
           </aside>
+          <div class="resize-handle resize-handle-split" id="resize-split"></div>
           <aside id="pdf-translation-pane" class="pdf-translation-pane" style="display:none;">
             <div class="pdf-translation-pane-header">全文翻译预览</div>
             <div id="pdf-translation-preview" class="pdf-translation-preview note-preview markdown-body">
@@ -208,6 +211,7 @@
           </div>
 
           <div id="notes-tab-bar" class="notes-tabs">
+            <button id="btn-open-notes-outline" class="btn-small notes-outline-open-btn" title="目录">☰</button>
             <button class="tab-btn active" data-tab="editor">编辑</button>
             <button class="tab-btn" data-tab="preview">预览</button>
             <button class="tab-btn" data-tab="annotations">标注</button>
@@ -229,7 +233,6 @@
             <select id="note-select" class="note-select">
               <option value="">-- 请先打开 PDF --</option>
             </select>
-            <button id="btn-open-notes-outline" class="btn-small" title="目录">☰</button>
             <button id="btn-new-note" class="btn-small" title="新建笔记">+</button>
             <button id="btn-delete-note" class="btn-small btn-danger" title="删除笔记">🗑</button>
           </div>
@@ -247,7 +250,8 @@
 
             <div id="notes-content-main" class="notes-content-main">
               <div id="tab-editor" class="tab-panel active">
-                <textarea id="note-editor" class="note-editor" placeholder="在此编写 Markdown 笔记...&#10;&#10;提示：选中 PDF 文本后点击“📝”可快速插入引用"></textarea>
+                <textarea id="note-editor" class="note-editor"
+                  placeholder="在此编写 Markdown 笔记...&#10;&#10;提示：选中 PDF 文本后点击“📝”可快速插入引用"></textarea>
               </div>
 
               <div id="tab-preview" class="tab-panel">
@@ -325,13 +329,15 @@
                 </div>
 
                 <label for="figure-clip-title">标题</label>
-                <input id="figure-clip-title" type="text" class="note-select" placeholder="例如：Figure 3 - Integral Distinguisher">
+                <input id="figure-clip-title" type="text" class="note-select"
+                  placeholder="例如：Figure 3 - Integral Distinguisher">
 
                 <label for="figure-clip-tags">标签（逗号分隔）</label>
                 <input id="figure-clip-tags" type="text" class="note-select" placeholder="例如：方法, 实验, 关键结果">
 
                 <label for="figure-clip-note">说明（Markdown）</label>
-                <textarea id="figure-clip-note" class="note-editor figure-clip-note" placeholder="记录该图表的关键信息..."></textarea>
+                <textarea id="figure-clip-note" class="note-editor figure-clip-note"
+                  placeholder="记录该图表的关键信息..."></textarea>
 
                 <div class="figure-clip-editor-actions">
                   <button id="btn-jump-figure-page" class="btn-action">跳转原页</button>
@@ -362,15 +368,17 @@
             </div>
             <div id="translation-workbench-status" class="translation-status">请先打开 PDF 文献</div>
             <div class="translation-single-wrap">
-              <textarea id="translation-current-output" class="translation-current-output" placeholder="截图后将在这里显示中文翻译结果..." readonly></textarea>
+              <textarea id="translation-current-output" class="translation-current-output"
+                placeholder="截图后将在这里显示中文翻译结果..." readonly></textarea>
             </div>
           </div>
 
           <div id="translation-tab-fulltext" class="summary-tab-panel">
             <div id="translation-fulltext-inner-tabs" class="notes-tabs translation-inner-tabs">
+              <button id="btn-open-translation-outline" class="btn-small translation-outline-open-btn"
+                title="目录">☰</button>
               <button class="summary-tab-btn active" data-fulltext-tab="editor">编辑</button>
               <button class="summary-tab-btn" data-fulltext-tab="preview">预览</button>
-              <button id="btn-open-translation-outline" class="btn-small translation-outline-open-btn" title="目录">☰</button>
             </div>
             <div id="translation-fulltext-layout" class="notes-content-layout">
               <div id="translation-outline-panel" class="notes-outline-panel" aria-hidden="true">
@@ -490,7 +498,8 @@
           </div>
           <div class="setting-item">
             <label for="ai-field-mapping">字段映射（JSON）</label>
-            <textarea id="ai-field-mapping" class="setting-textarea" placeholder='{"endpoint":"/chat/completions"}'></textarea>
+            <textarea id="ai-field-mapping" class="setting-textarea"
+              placeholder='{"endpoint":"/chat/completions"}'></textarea>
             <p class="setting-hint">用于兼容 OpenAI-compatible API 差异。</p>
           </div>
           <div class="setting-item">
@@ -499,7 +508,8 @@
           </div>
           <div class="setting-item">
             <label for="ai-terminology">术语库（每行 term=preferred）</label>
-            <textarea id="ai-terminology" class="setting-textarea" placeholder="transformer=Transformer&#10;integral distinguisher=积分区分器"></textarea>
+            <textarea id="ai-terminology" class="setting-textarea"
+              placeholder="transformer=Transformer&#10;integral distinguisher=积分区分器"></textarea>
           </div>
           <div class="setting-item setting-actions">
             <button id="btn-save-ai-settings" class="btn-accent">保存 AI 设置</button>

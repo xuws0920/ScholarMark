@@ -624,13 +624,95 @@ function jumpToFulltextOutline(item) {
   const editor = $('#translation-fulltext-editor');
   if (!editor) return;
   const start = Math.max(0, Math.min(item.index, editor.value.length));
-  const end = Math.min(editor.value.length, start + item.fullText.length + 8);
+  jumpInFulltextEditor(editor, start, item.fullText);
+}
+
+function jumpInFulltextEditor(editor, start, fullText) {
+  const end = Math.min(editor.value.length, start + Math.max((fullText || '').length, 10));
   editor.focus();
   editor.setSelectionRange(start, end);
-  const line = 1 + countNewLines(editor.value, start);
+
+  // First choice: mirror-based pixel measurement, resilient to line wrapping.
+  const measuredTop = measureCaretTopInTextarea(editor, start);
+
+  // Fallback: estimate by newline count and proportional position.
   const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 24;
-  const targetTop = Math.max(0, (line - 2) * lineHeight);
-  editor.scrollTop = targetTop;
+  const lineNumber = 1 + countNewLines(editor.value, start);
+  const byLineTop = Math.max(0, (lineNumber - 1) * lineHeight - editor.clientHeight * 0.35);
+  const ratio = start / Math.max(editor.value.length, 1);
+  const byRatioTop = Math.max(0, (editor.scrollHeight - editor.clientHeight) * ratio - editor.clientHeight * 0.2);
+  const fallbackTop = Math.max(byLineTop, byRatioTop);
+  const targetTop = Number.isFinite(measuredTop) ? Math.max(0, measuredTop - editor.clientHeight * 0.5) : fallbackTop;
+
+  // Some browsers ignore immediate scroll after setSelectionRange; force in multiple frames.
+  requestAnimationFrame(() => {
+    editor.scrollTop = targetTop;
+    requestAnimationFrame(() => {
+      editor.scrollTop = targetTop;
+      setTimeout(() => {
+        editor.scrollTop = targetTop;
+      }, 40);
+    });
+  });
+}
+
+function measureCaretTopInTextarea(textarea, index) {
+  const style = getComputedStyle(textarea);
+  const mirror = document.createElement('div');
+
+  mirror.style.position = 'absolute';
+  mirror.style.visibility = 'hidden';
+  mirror.style.pointerEvents = 'none';
+  mirror.style.zIndex = '-1';
+  mirror.style.whiteSpace = 'pre-wrap';
+  mirror.style.wordWrap = 'break-word';
+  mirror.style.overflowWrap = 'break-word';
+  mirror.style.boxSizing = 'border-box';
+
+  const copyProps = [
+    'fontFamily',
+    'fontSize',
+    'fontWeight',
+    'fontStyle',
+    'fontVariant',
+    'lineHeight',
+    'letterSpacing',
+    'textTransform',
+    'textIndent',
+    'textAlign',
+    'wordSpacing',
+    'tabSize',
+    'paddingTop',
+    'paddingRight',
+    'paddingBottom',
+    'paddingLeft',
+    'borderTopWidth',
+    'borderRightWidth',
+    'borderBottomWidth',
+    'borderLeftWidth',
+  ];
+  for (const p of copyProps) {
+    mirror.style[p] = style[p];
+  }
+
+  const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+  const borderRight = parseFloat(style.borderRightWidth) || 0;
+  mirror.style.width = `${textarea.clientWidth + borderLeft + borderRight}px`;
+
+  const safeIndex = Math.max(0, Math.min(index, textarea.value.length));
+  const before = textarea.value.slice(0, safeIndex);
+  const after = textarea.value.slice(safeIndex) || '.';
+  mirror.textContent = before;
+
+  const marker = document.createElement('span');
+  marker.textContent = after[0];
+  mirror.appendChild(marker);
+
+  document.body.appendChild(mirror);
+  const top = marker.offsetTop;
+  document.body.removeChild(mirror);
+
+  return top;
 }
 
 function toggleFulltextOutlineDrawer() {
@@ -658,6 +740,8 @@ function closeFulltextOutlineDrawer() {
   panel.classList.remove('open');
   panel.setAttribute('aria-hidden', 'true');
   panel.style.height = '';
+  panel.style.left = '';
+  panel.style.top = '';
   if (opener) opener.classList.remove('active');
   localStorage.setItem(FULLTEXT_OUTLINE_DRAWER_OPEN_KEY, '0');
 }
@@ -683,16 +767,26 @@ function scheduleFulltextOutlineHeightUpdate() {
 
 function updateFulltextOutlineDrawerHeight() {
   const drawer = $('#translation-outline-panel');
-  const header = drawer?.querySelector('.notes-outline-header');
-  const list = $('#translation-fulltext-outline-list');
-  if (!drawer || !header || !list || !drawer.classList.contains('open')) return;
+  if (!drawer || !drawer.classList.contains('open')) return;
+  const sidebar = $('#sidebar-right');
+  const viewer = $('#pdf-viewer-section');
+  const layout = $('#translation-fulltext-layout');
+  if (!sidebar || !viewer || !layout) return;
 
-  const contentHeight = list.scrollHeight || 0;
-  const headerHeight = header.getBoundingClientRect().height || 42;
-  const desired = headerHeight + contentHeight + 14;
-  const max = Math.max(220, (window.innerHeight || 900) - 180);
-  const min = 180;
-  drawer.style.height = `${Math.max(min, Math.min(max, desired))}px`;
+  const sidebarRect = sidebar.getBoundingClientRect();
+  const viewerRect = viewer.getBoundingClientRect();
+  const layoutRect = layout.getBoundingClientRect();
+  const drawerRect = drawer.getBoundingClientRect();
+  const drawerWidth = drawerRect.width || 280;
+  const gap = 10;
+
+  const left = Math.max(viewerRect.left + gap, sidebarRect.left - drawerWidth - gap);
+  const top = Math.max(viewerRect.top + gap, layoutRect.top + 6);
+  const maxHeight = Math.max(180, Math.min(window.innerHeight - top - 10, viewerRect.bottom - top - gap));
+
+  drawer.style.left = `${Math.round(left)}px`;
+  drawer.style.top = `${Math.round(top)}px`;
+  drawer.style.height = `${Math.round(maxHeight)}px`;
 }
 
 function fulltextDocKey(pdfId) {

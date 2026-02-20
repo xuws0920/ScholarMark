@@ -8,6 +8,7 @@
     max-width: 880px;
     border-right: none;
     border-left: 1px solid var(--border-subtle);
+    overflow: visible;
 }
 
 .sidebar-header-col {
@@ -221,6 +222,63 @@
     color: var(--accent-primary);
     border-color: color-mix(in srgb, var(--accent-primary) 38%, var(--border-default));
     background: var(--accent-primary-bg);
+}
+
+#translation-fulltext-inner-tabs .translation-outline-open-btn {
+    margin-left: 0;
+    margin-right: 2px;
+}
+
+#notes-tab-bar .notes-outline-open-btn {
+    margin-left: 0;
+    margin-right: 2px;
+}
+
+#notes-outline-panel {
+    position: fixed;
+    left: -9999px;
+    top: -9999px;
+    bottom: auto;
+    width: min(300px, 42vw);
+    max-width: min(300px, 42vw);
+    min-width: 200px;
+    max-height: min(72vh, calc(100vh - 120px));
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    transform: translateX(14px);
+    transition: transform var(--transition-normal), opacity var(--transition-normal), border-color var(--transition-fast);
+    z-index: 80;
+}
+
+#notes-outline-panel.open {
+    transform: translateX(0);
+}
+
+#translation-fulltext-layout {
+    gap: 10px;
+    padding: 8px 12px 12px;
+    overflow: visible;
+    position: relative;
+}
+
+#translation-outline-panel {
+    position: fixed;
+    left: -9999px;
+    top: -9999px;
+    bottom: auto;
+    width: min(300px, 42vw);
+    max-width: min(300px, 42vw);
+    min-width: 200px;
+    max-height: min(72vh, calc(100vh - 120px));
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    transform: translateX(14px);
+    transition: transform var(--transition-normal), opacity var(--transition-normal), border-color var(--transition-fast);
+    z-index: 80;
+}
+
+#translation-outline-panel.open {
+    transform: translateX(0);
 }
 
 /* 笔记 Tab 切换 */

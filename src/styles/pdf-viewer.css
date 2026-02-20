@@ -124,17 +124,40 @@
     display: none;
 }
 
+/* 中栏 split 分隔条默认隐藏 */
+.resize-handle-split {
+    display: none;
+}
+
 .pdf-container.split-view {
     display: flex;
     align-items: stretch;
-    gap: 10px;
     padding: 10px;
+    gap: 0;
     overflow: hidden;
+}
+
+.pdf-container.split-view .resize-handle-split {
+    display: block;
+    width: 6px;
+    flex-shrink: 0;
+    cursor: col-resize;
+    background: transparent;
+    transition: background var(--transition-fast);
+    position: relative;
+    z-index: 5;
+    border-radius: 3px;
+    margin: 0 2px;
+}
+
+.pdf-container.split-view .resize-handle-split:hover,
+.pdf-container.split-view .resize-handle-split.active {
+    background: var(--accent-primary);
 }
 
 .pdf-container.split-view #pdf-pages {
     flex: 1;
-    min-width: 0;
+    min-width: 200px;
     padding: 20px;
     overflow: auto;
     overscroll-behavior: contain;
@@ -148,7 +171,8 @@
     display: flex;
     flex-direction: column;
     width: var(--split-pane-width);
-    min-width: 320px;
+    min-width: 260px;
+    max-width: 70%;
     border: 1px solid var(--border-subtle);
     border-radius: var(--radius-lg);
     background: var(--bg-secondary);

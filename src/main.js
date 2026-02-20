@@ -36,6 +36,7 @@ const READING_PROGRESS_PREFIX = 'readingProgress:';
 const LEFT_SIDEBAR_COLLAPSED_KEY = 'leftSidebarCollapsed';
 const LEFT_SIDEBAR_WIDTH_KEY = 'leftSidebarWidth';
 const VIEWER_TRANSLATION_SPLIT_KEY = 'viewerTranslationSplit';
+const SPLIT_PANE_WIDTH_KEY = 'splitPaneWidth';
 let viewerTranslationSplit = localStorage.getItem(VIEWER_TRANSLATION_SPLIT_KEY) === '1';
 const saveReadingProgressDebounced = debounce(async () => {
   await saveCurrentReadingProgress();
@@ -441,6 +442,58 @@ function setupViewerTranslationSplit() {
 
   applyViewerTranslationSplitState();
   syncViewerTranslationPreview();
+  setupSplitResize();
+}
+
+function setupSplitResize() {
+  const handle = $('#resize-split');
+  const pane = $('#pdf-translation-pane');
+  const container = $('#pdf-container');
+  if (!handle || !pane || !container) return;
+
+  let startX, startWidth;
+
+  handle.addEventListener('mousedown', (e) => {
+    if (!viewerTranslationSplit) return;
+    e.preventDefault();
+    startX = e.clientX;
+    startWidth = pane.getBoundingClientRect().width;
+    handle.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  });
+
+  function onMouseMove(e) {
+    // 向左拖 => diff 为负 => 翻译面板变宽
+    const diff = e.clientX - startX;
+    const newWidth = startWidth - diff;
+    const containerWidth = container.getBoundingClientRect().width;
+    const minWidth = 260;
+    const maxWidth = containerWidth * 0.7;
+
+    if (newWidth >= minWidth && newWidth <= maxWidth) {
+      pane.style.width = newWidth + 'px';
+    }
+  }
+
+  function onMouseUp() {
+    handle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+
+    // 保存当前宽度
+    const width = Math.round(pane.getBoundingClientRect().width);
+    if (Number.isFinite(width) && width >= 260) {
+      localStorage.setItem(SPLIT_PANE_WIDTH_KEY, String(width));
+    }
+    // 自适应 PDF 宽度
+    requestAnimationFrame(() => fitWidth());
+  }
 }
 
 function setupAutoSaveToDirectory() {
@@ -632,6 +685,15 @@ function applyViewerTranslationSplitState() {
   btn.title = viewerTranslationSplit ? '关闭并排预览' : '并排预览全文翻译';
   if (pane) {
     pane.style.display = viewerTranslationSplit ? 'flex' : 'none';
+    // 恢复保存的翻译面板宽度
+    if (viewerTranslationSplit) {
+      const savedWidth = localStorage.getItem(SPLIT_PANE_WIDTH_KEY);
+      if (savedWidth) {
+        pane.style.width = savedWidth + 'px';
+      }
+    } else {
+      pane.style.width = '';
+    }
   }
 }
 

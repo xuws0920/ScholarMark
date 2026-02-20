@@ -684,6 +684,8 @@ function closeNotesOutlineDrawer() {
   panel.classList.remove('open');
   panel.setAttribute('aria-hidden', 'true');
   panel.style.height = '';
+  panel.style.left = '';
+  panel.style.top = '';
   if (opener) opener.classList.remove('active');
   localStorage.setItem(OUTLINE_DRAWER_OPEN_KEY, '0');
 }
@@ -709,16 +711,26 @@ function scheduleNotesOutlineHeightUpdate() {
 
 function updateNotesOutlineDrawerHeight() {
   const drawer = $('#notes-outline-panel');
-  const header = drawer?.querySelector('.notes-outline-header');
-  const list = $('#notes-outline-list');
-  if (!drawer || !header || !list || !drawer.classList.contains('open')) return;
+  if (!drawer || !drawer.classList.contains('open')) return;
+  const sidebar = $('#sidebar-right');
+  const viewer = $('#pdf-viewer-section');
+  const layout = $('#notes-content-layout');
+  if (!sidebar || !viewer || !layout) return;
 
-  const contentHeight = list.scrollHeight || 0;
-  const headerHeight = header.getBoundingClientRect().height || 42;
-  const desired = headerHeight + contentHeight + 14;
-  const max = Math.max(220, (window.innerHeight || 900) - 130);
-  const min = 180;
-  drawer.style.height = `${Math.max(min, Math.min(max, desired))}px`;
+  const sidebarRect = sidebar.getBoundingClientRect();
+  const viewerRect = viewer.getBoundingClientRect();
+  const layoutRect = layout.getBoundingClientRect();
+  const drawerRect = drawer.getBoundingClientRect();
+  const drawerWidth = drawerRect.width || 280;
+  const gap = 10;
+
+  const left = Math.max(viewerRect.left + gap, sidebarRect.left - drawerWidth - gap);
+  const top = Math.max(viewerRect.top + gap, layoutRect.top + 6);
+  const maxHeight = Math.max(180, Math.min(window.innerHeight - top - 10, viewerRect.bottom - top - gap));
+
+  drawer.style.left = `${Math.round(left)}px`;
+  drawer.style.top = `${Math.round(top)}px`;
+  drawer.style.height = `${Math.round(maxHeight)}px`;
 }
 
 function countNewLines(text, endIndex) {

@@ -81,3 +81,10 @@
   - `pdf-viewer.css`：给 `.pdf-page-wrapper` 和 `.page-number-label` 添加 `flex-shrink: 0`
   - `pdf-viewer.js`：导出 `fitWidth` 函数
   - `main.js`：切换 split-view 后调用 `fitWidth()` 重新适配宽度
+
+### 2026-02-20：中栏双页视图可拖动调整宽度
+- **功能**：split-view 模式下，PDF 原文与翻译预览之间新增可拖动分隔条
+- **实现**：
+  - `index.html`：在 `#pdf-pages` 和 `#pdf-translation-pane` 之间插入 `#resize-split`
+  - `pdf-viewer.css`：分隔条样式（默认隐藏，split-view 下显示），翻译面板 min/max 宽度约束
+  - `main.js`：`setupSplitResize()` 实现拖拽交互，面板宽度持久化到 localStorage，拖拽结束自动 `fitWidth()`
