@@ -520,7 +520,7 @@ function cropCanvasRegion(canvas, wrapper, rect) {
     const ctx = out.getContext('2d');
     if (!ctx) return '';
     ctx.drawImage(canvas, sx, sy, clippedW, clippedH, 0, 0, clippedW, clippedH);
-    return out.toDataURL('image/png');
+    return out.toDataURL('image/jpeg', 0.88);
 }
 
 function clamp(v, min, max) {
@@ -531,7 +531,7 @@ export function capturePageImage(pageNum = currentPage) {
     const pageData = renderedPages.get(pageNum);
     if (!pageData?.canvas) return '';
     try {
-        return pageData.canvas.toDataURL('image/png');
+        return pageData.canvas.toDataURL('image/jpeg', 0.88);
     } catch (err) {
         console.warn('Capture page image failed:', err);
         return '';

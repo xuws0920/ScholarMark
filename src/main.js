@@ -283,7 +283,7 @@ function setupUIEvents() {
     if (await ensureWritableDirectory(true)) {
       const meta = getPdfMeta(currentPdfId);
       const ok = await exportNoteToDir(dirHandle, meta?.name || 'unknown', note.title, note.content);
-      alert(ok ? '导出成功（含 PDF + MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
+      alert(ok ? '导出成功（MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
     } else {
       await downloadNote(note.title, note.content);
     }
@@ -299,7 +299,7 @@ function setupUIEvents() {
     if (await ensureWritableDirectory(true)) {
       const meta = getPdfMeta(currentPdfId);
       const count = await exportAllNotes(dirHandle, meta?.name || 'unknown', notes);
-      alert(`成功导出 ${count} 个笔记（含 PDF + MD）`);
+      alert(`成功导出 ${count} 个笔记（MD）`);
     } else {
       for (const note of notes) await downloadNote(note.title, note.content);
     }
@@ -316,7 +316,7 @@ function setupUIEvents() {
     if (await ensureWritableDirectory(true)) {
       const meta = getPdfMeta(currentPdfId);
       const ok = await exportNoteToDir(dirHandle, meta?.name || 'unknown', title, summary.content || '');
-      alert(ok ? '总结导出成功（含 PDF + MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
+      alert(ok ? '总结导出成功（MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
     } else {
       await downloadNote(title, summary.content || '');
     }
@@ -353,7 +353,7 @@ function setupUIEvents() {
     if (await ensureWritableDirectory(true)) {
       const meta = getPdfMeta(currentPdfId);
       const ok = await exportNoteToDir(dirHandle, meta?.name || 'unknown', title, content);
-      alert(ok ? '翻译导出成功（含 PDF + MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
+      alert(ok ? '翻译导出成功（MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
     } else {
       await downloadNote(title, content);
     }
@@ -369,7 +369,7 @@ function setupUIEvents() {
     if (await ensureWritableDirectory(true)) {
       const meta = getPdfMeta(currentPdfId);
       const ok = await exportNoteToDir(dirHandle, meta?.name || 'unknown', title, content);
-      alert(ok ? '全文翻译导出成功（含 PDF + MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
+      alert(ok ? '全文翻译导出成功（MD）' : `导出失败：${getLastExportError() || '请重新选择存储路径或检查内容'}`);
     } else {
       await downloadNote(title, content);
     }

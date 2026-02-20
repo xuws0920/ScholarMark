@@ -110,6 +110,7 @@ async function reloadFulltextTranslations() {
   const all = await storage.getTranslationsByPdf(currentPdfId);
   fulltextItems = all
     .filter((x) => x.sourceType === 'page_full' || x.archivedToFulltext)
+    .map((x) => ({ ...x, sourceImageDataUrl: '' }))
     .sort((a, b) => a.page - b.page || new Date(a.updatedAt) - new Date(b.updatedAt));
 }
 
@@ -471,7 +472,7 @@ async function handleImageTranslation({
       if (existing) {
         await storage.updateTranslation({
           ...existing,
-          sourceImageDataUrl: imageDataUrl,
+          sourceImageDataUrl: '',
           imageHash,
           bilingualMd: translatedText,
           sourceType: 'page_full',
@@ -492,7 +493,7 @@ async function handleImageTranslation({
           sourceType: 'page_full',
           archivedToFulltext: true,
           imageHash,
-          sourceImageDataUrl: imageDataUrl,
+          sourceImageDataUrl: '',
           bilingualMd: translatedText,
           formulaNotes: '',
           terminologyWarnings: [],

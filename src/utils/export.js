@@ -20,7 +20,7 @@ export async function chooseDirectory() {
 }
 
 /**
- * Export markdown + rendered pdf (from markdown preview HTML) to selected directory.
+ * Export markdown only to selected directory.
  */
 export async function exportNoteToDir(dirHandle, pdfName, noteTitle, content) {
     lastExportErrorMessage = '';
@@ -35,12 +35,6 @@ export async function exportNoteToDir(dirHandle, pdfName, noteTitle, content) {
         await mdWritable.write(content || '');
         await mdWritable.close();
 
-        const pdfBytes = await markdownPreviewToPdfBytes(content || '');
-        const pdfHandle = await subDir.getFileHandle(`${baseName}.pdf`, { create: true });
-        const pdfWritable = await pdfHandle.createWritable();
-        await pdfWritable.write(pdfBytes);
-        await pdfWritable.close();
-
         return true;
     } catch (e) {
         lastExportErrorMessage = e?.message || String(e) || '未知导出错误';
@@ -50,7 +44,7 @@ export async function exportNoteToDir(dirHandle, pdfName, noteTitle, content) {
 }
 
 /**
- * Download markdown + rendered pdf.
+ * Download markdown only.
  */
 export async function downloadNote(noteTitle, content) {
     const baseName = sanitizeFileName(noteTitle || '未命名');
@@ -58,13 +52,6 @@ export async function downloadNote(noteTitle, content) {
     const mdBlob = new Blob([content || ''], { type: 'text/markdown;charset=utf-8' });
     triggerDownload(mdBlob, `${baseName}.md`);
 
-    try {
-        const pdfBytes = await markdownPreviewToPdfBytes(content || '');
-        const pdfBlob = new Blob([pdfBytes], { type: 'application/pdf' });
-        triggerDownload(pdfBlob, `${baseName}.pdf`);
-    } catch (err) {
-        console.warn('PDF download failed:', err);
-    }
 }
 
 export function getLastExportError() {
@@ -72,7 +59,7 @@ export function getLastExportError() {
 }
 
 /**
- * Batch export all notes (md + rendered pdf)
+ * Batch export all notes (md only)
  */
 export async function exportAllNotes(dirHandle, pdfName, notes) {
     let successCount = 0;
