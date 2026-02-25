@@ -273,6 +273,7 @@ body {
   display: flex;
   flex: 1;
   overflow: hidden;
+  position: relative;
 }
 
 /* ===== 按钮通用样式 ===== */

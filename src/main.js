@@ -9,7 +9,7 @@ import { initNoteEditor, setPdfId as setNoteEditorPdf, insertAnnotationRef, jump
 import { initSummaryEditor, setPdfId as setSummaryPdf, getCurrentSummary, clearSummaryView, appendToSummary } from './modules/summary-editor.js';
 import { initOverviewEditor, setPdfId as setOverviewPdf, clearOverviewView, refreshOverview } from './modules/overview-editor.js';
 import { initTranslationEditor, setPdfId as setTranslationPdf, clearTranslationView, getCurrentTranslationMarkdown, getFulltextTranslationMarkdown } from './modules/translation-editor.js';
-import { initLibrary, getPdfMeta } from './modules/library.js';
+import { initLibrary, getPdfMeta, getPdfList, selectPdf } from './modules/library.js';
 import { initSearch } from './modules/search.js';
 import { initOutline, loadOutline, clearOutline } from './modules/outline.js';
 import { chooseDirectory, exportNoteToDir, exportAllNotes, downloadNote, getLastExportError } from './utils/export.js';
@@ -31,6 +31,8 @@ let summaryCards = [];
 let activeCardIndex = 0;
 let cardLibraryOpen = false;
 let cardSortMode = localStorage.getItem('cardSortMode') === 'name' ? 'name' : 'updated';
+let collapsedLibraryDrawerOpen = false;
+let collapsedLibraryQuery = '';
 
 const READING_PROGRESS_PREFIX = 'readingProgress:';
 const LEFT_SIDEBAR_COLLAPSED_KEY = 'leftSidebarCollapsed';
@@ -126,6 +128,7 @@ async function init() {
 
         await loadOutline();
         refreshAnnotationsList();
+        renderCollapsedLibraryList();
       },
       onPdfDeleted: () => {
         currentPdfId = null;
@@ -137,6 +140,7 @@ async function init() {
         clearOverviewView();
         clearTranslationView();
         refreshCardLibrary();
+        renderCollapsedLibraryList();
       }
     });
 
@@ -145,14 +149,12 @@ async function init() {
     initSearch({
       onAnnotationResultClick: async (annotation) => {
         if (annotation.pdfId !== currentPdfId) {
-          const { selectPdf } = await import('./modules/library.js');
           await selectPdf(annotation.pdfId);
         }
         setTimeout(() => navigateToAnnotation(annotation), 500);
       },
       onNoteResultClick: async (note) => {
         if (note.pdfId !== currentPdfId) {
-          const { selectPdf } = await import('./modules/library.js');
           await selectPdf(note.pdfId);
         }
         setTimeout(() => {
@@ -166,6 +168,7 @@ async function init() {
     setupViewerTranslationSplit();
     setupResizeHandles();
     restoreSidebarLayoutState();
+    setupCollapsedEntryRail();
     initTheme();
     bindCardLibraryKeys();
     initMarkdownToolbars([
@@ -419,6 +422,59 @@ function setupUIEvents() {
       hideContextMenu();
     }
   });
+}
+
+function setupCollapsedEntryRail() {
+  const libraryBtn = $('#btn-collapsed-entry-library');
+  const cardsBtn = $('#btn-collapsed-entry-cards');
+  const closeBtn = $('#btn-close-collapsed-library-drawer');
+  const searchInput = $('#collapsed-library-search');
+  const drawer = $('#collapsed-library-drawer');
+  if (!libraryBtn || !cardsBtn || !closeBtn || !searchInput || !drawer) return;
+
+  libraryBtn.addEventListener('click', () => {
+    if (!leftSidebarCollapsed) return;
+    toggleCollapsedLibraryDrawer();
+  });
+
+  cardsBtn.addEventListener('click', async () => {
+    if (!leftSidebarCollapsed) return;
+    closeCollapsedLibraryDrawer();
+    activateSidebarTab('cards');
+    await openCardLibrary();
+    setCollapsedEntryActiveState('cards');
+  });
+
+  closeBtn.addEventListener('click', () => {
+    closeCollapsedLibraryDrawer();
+  });
+
+  searchInput.addEventListener('input', (e) => {
+    collapsedLibraryQuery = String(e.target.value || '').trim().toLowerCase();
+    renderCollapsedLibraryList();
+    updateCollapsedLibraryDrawerMaxHeight();
+  });
+
+  document.addEventListener('mousedown', (e) => {
+    if (!collapsedLibraryDrawerOpen || !leftSidebarCollapsed) return;
+    const target = e.target;
+    if (drawer.contains(target) || libraryBtn.contains(target)) return;
+    closeCollapsedLibraryDrawer();
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && collapsedLibraryDrawerOpen) {
+      closeCollapsedLibraryDrawer();
+    }
+  });
+
+  window.addEventListener('resize', () => {
+    if (collapsedLibraryDrawerOpen) {
+      updateCollapsedLibraryDrawerMaxHeight();
+    }
+  });
+
+  renderCollapsedLibraryList();
 }
 
 function setupViewerTranslationSplit() {
@@ -729,6 +785,9 @@ async function openCardLibrary() {
 function closeCardLibrary() {
   $('#card-library-view').style.display = 'none';
   cardLibraryOpen = false;
+  if (leftSidebarCollapsed) {
+    setCollapsedEntryActiveState(null);
+  }
 }
 
 function activateSidebarTab(target) {
@@ -900,7 +959,115 @@ function applyLeftSidebarCollapsed(collapsed) {
   appMain.classList.toggle('left-sidebar-collapsed', leftSidebarCollapsed);
   toggleBtn.textContent = leftSidebarCollapsed ? '⟩' : '⟨';
   toggleBtn.title = leftSidebarCollapsed ? '展开左侧栏' : '收起左侧栏';
+  if (!leftSidebarCollapsed) {
+    closeCollapsedLibraryDrawer();
+    setCollapsedEntryActiveState(null);
+  }
   localStorage.setItem(LEFT_SIDEBAR_COLLAPSED_KEY, leftSidebarCollapsed ? '1' : '0');
+}
+
+function toggleCollapsedLibraryDrawer() {
+  if (collapsedLibraryDrawerOpen) {
+    closeCollapsedLibraryDrawer();
+    return;
+  }
+  openCollapsedLibraryDrawer();
+}
+
+function openCollapsedLibraryDrawer() {
+  if (!leftSidebarCollapsed) return;
+  const drawer = $('#collapsed-library-drawer');
+  if (!drawer) return;
+
+  renderCollapsedLibraryList();
+  updateCollapsedLibraryDrawerMaxHeight();
+  drawer.classList.add('open');
+  drawer.setAttribute('aria-hidden', 'false');
+  collapsedLibraryDrawerOpen = true;
+  setCollapsedEntryActiveState('library');
+}
+
+function closeCollapsedLibraryDrawer() {
+  const drawer = $('#collapsed-library-drawer');
+  if (!drawer) return;
+  drawer.classList.remove('open');
+  drawer.setAttribute('aria-hidden', 'true');
+  collapsedLibraryDrawerOpen = false;
+  setCollapsedEntryActiveState(null);
+}
+
+function setCollapsedEntryActiveState(activeTarget) {
+  const libraryBtn = $('#btn-collapsed-entry-library');
+  const cardsBtn = $('#btn-collapsed-entry-cards');
+  if (libraryBtn) {
+    const active = activeTarget === 'library';
+    libraryBtn.classList.toggle('active', active);
+    libraryBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+  if (cardsBtn) {
+    const active = activeTarget === 'cards' && cardLibraryOpen;
+    cardsBtn.classList.toggle('active', active);
+    cardsBtn.setAttribute('aria-pressed', active ? 'true' : 'false');
+  }
+}
+
+function renderCollapsedLibraryList() {
+  const container = $('#collapsed-library-list');
+  if (!container) return;
+
+  const sorted = [...getPdfList()].sort((a, b) => {
+    return new Date(b.lastOpenedAt || b.addedAt) - new Date(a.lastOpenedAt || a.addedAt);
+  });
+  const query = collapsedLibraryQuery;
+  const filtered = query
+    ? sorted.filter((pdf) => (pdf.name || '').toLowerCase().includes(query))
+    : sorted;
+
+  if (filtered.length === 0) {
+    container.innerHTML = `<p class="outline-empty">${query ? '未匹配到文献' : '暂无文献'}</p>`;
+    return;
+  }
+
+  container.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  filtered.forEach((pdf) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'collapsed-library-item';
+    item.classList.toggle('active', pdf.id === currentPdfId);
+    item.title = pdf.name || '未命名文献';
+    item.innerHTML = `
+      <span class="collapsed-library-item-name">${escapeHtml(pdf.name || '未命名文献')}</span>
+      <span class="collapsed-library-item-meta">${formatDateTime(pdf.lastOpenedAt || pdf.addedAt)}</span>
+    `;
+    item.addEventListener('click', async () => {
+      await selectPdf(pdf.id);
+      closeCollapsedLibraryDrawer();
+    });
+    frag.appendChild(item);
+  });
+  container.appendChild(frag);
+}
+
+function updateCollapsedLibraryDrawerMaxHeight() {
+  const drawer = $('#collapsed-library-drawer');
+  const appMain = $('#app-main');
+  if (!drawer || !appMain) return;
+
+  const appRect = appMain.getBoundingClientRect();
+  const drawerRect = drawer.getBoundingClientRect();
+  const topOffset = Math.max(0, drawerRect.top - appRect.top);
+  const maxHeight = Math.max(220, Math.floor(appRect.height - topOffset - 12));
+  drawer.style.setProperty('--collapsed-library-drawer-max-height', `${maxHeight}px`);
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function showAnnotationContextMenu(annotation, event) {
