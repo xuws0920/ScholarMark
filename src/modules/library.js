@@ -1,62 +1,45 @@
-/**
- * library.js — 文献库管理模块
- * 
- * 处理 PDF 导入、列表展示、切换、删除
- */
-
+﻿
 import { $, createElement, formatFileSize, formatDate } from '../utils/dom.js';
 import * as storage from './storage.js';
 
 let pdfs = [];
 let currentPdfId = null;
 
-// 回调
 let onPdfSelected = null;
 let onPdfDeleted = null;
+let onPdfRenamed = null;
 
-/**
- * 初始化文献库
- */
 export async function initLibrary(callbacks = {}) {
     onPdfSelected = callbacks.onPdfSelected;
     onPdfDeleted = callbacks.onPdfDeleted;
+    onPdfRenamed = callbacks.onPdfRenamed;
 
-    // 加载 PDF 列表
     pdfs = await storage.getAllPdfs();
     renderList();
 
-    // 导入按钮
     $('#btn-import-pdf').addEventListener('click', () => {
         $('#file-input').click();
     });
     $('#btn-import-bundle')?.addEventListener('click', importBundleDirectory);
 
-    // 文件选择
     $('#file-input').addEventListener('change', handleFileSelect);
 
-    // 拖放
     setupDragDrop();
 }
 
-/**
- * 处理文件选择
- */
 async function handleFileSelect(e) {
     const files = Array.from(e.target.files).filter(f => f.type === 'application/pdf');
     for (const file of files) {
         await importPdf(file);
     }
-    e.target.value = ''; // 重置
+    e.target.value = '';
 }
 
-/**
- * 导入 PDF 文件
- */
 async function importPdf(file) {
     const arrayBuffer = await file.arrayBuffer();
 
-    // 检查是否已存在同名文件
-    const existing = pdfs.find(p => p.name === file.name);
+    const fileNameKey = normalizePdfName(file.name).toLowerCase();
+    const existing = pdfs.find((p) => normalizePdfName(p.name).toLowerCase() === fileNameKey);
     const pdfRecord = await storage.addPdf({
         id: existing?.id || undefined,
         name: file.name,
@@ -67,14 +50,12 @@ async function importPdf(file) {
     if (!existing) {
         pdfs.push(pdfRecord);
     } else {
-        // 更新元数据
         const idx = pdfs.findIndex(p => p.id === existing.id);
         pdfs[idx] = { ...pdfRecord };
     }
 
     renderList();
 
-    // 自动打开新导入的 PDF
     selectPdf(pdfRecord.id);
 }
 
@@ -156,7 +137,8 @@ async function importBundleFolder(folderHandle) {
 
 async function upsertPdfFromFile(file) {
     const arrayBuffer = await file.arrayBuffer();
-    const existing = pdfs.find((p) => p.name === file.name);
+    const fileNameKey = normalizePdfName(file.name).toLowerCase();
+    const existing = pdfs.find((p) => normalizePdfName(p.name).toLowerCase() === fileNameKey);
     const pdfRecord = await storage.addPdf({
         id: existing?.id || undefined,
         name: file.name,
@@ -227,9 +209,6 @@ async function importMdFilesForPdf(dirHandle, pdfId) {
     return imported;
 }
 
-/**
- * 设置拖放区域
- */
 function setupDragDrop() {
     const dropZone = $('#pdf-drop-zone');
     const sidebar = $('#sidebar-left');
@@ -258,14 +237,10 @@ function setupDragDrop() {
     });
 }
 
-/**
- * 选择 PDF
- */
 export async function selectPdf(pdfId) {
     currentPdfId = pdfId;
     await storage.updatePdfLastOpened(pdfId);
 
-    // 更新选中状态
     document.querySelectorAll('.pdf-item').forEach(el => {
         el.classList.toggle('active', el.dataset.pdfId === pdfId);
     });
@@ -277,14 +252,10 @@ export async function selectPdf(pdfId) {
     }
 }
 
-/**
- * 渲染文献列表
- */
 function renderList() {
     const list = $('#pdf-list');
     list.innerHTML = '';
 
-    // 按最近打开时间排序
     const sorted = [...pdfs].sort((a, b) => {
         return new Date(b.lastOpenedAt || b.addedAt) - new Date(a.lastOpenedAt || a.addedAt);
     });
@@ -295,14 +266,25 @@ function renderList() {
             'data-pdf-id': pdf.id,
             onClick: () => selectPdf(pdf.id)
         }, [
-            createElement('span', { className: 'pdf-item-icon', textContent: '📄' }),
             createElement('div', { className: 'pdf-item-info' }, [
                 createElement('div', { className: 'pdf-item-name', textContent: pdf.name }),
                 createElement('div', {
                     className: 'pdf-item-meta',
                     textContent: `${formatFileSize(pdf.size)} · ${formatDate(pdf.addedAt)}`
                 })
-            ]),
+            ])
+        ]);
+
+        const actions = createElement('div', { className: 'pdf-item-actions' }, [
+            createElement('button', {
+                className: 'pdf-item-rename',
+                textContent: '✎',
+                title: '重命名文献',
+                onClick: (e) => {
+                    e.stopPropagation();
+                    renamePdf(pdf.id);
+                }
+            }),
             createElement('button', {
                 className: 'pdf-item-delete',
                 textContent: '🗑',
@@ -314,17 +296,14 @@ function renderList() {
             })
         ]);
 
-        // 设置 data attribute
-        item.dataset.pdfId = pdf.id;
-        list.appendChild(item);
+        const row = createElement('div', { className: 'pdf-item-row' }, [item, actions]);
+        row.dataset.pdfId = pdf.id;
+        list.appendChild(row);
     }
 }
 
-/**
- * 删除 PDF
- */
 async function deletePdf(pdfId, pdfName) {
-    if (!confirm(`确定删除「${pdfName}」以及其所有标注和笔记吗？`)) return;
+    if (!confirm(`确定删除“${pdfName}”以及其所有标注和笔记吗？`)) return;
 
     await storage.deletePdf(pdfId);
     pdfs = pdfs.filter(p => p.id !== pdfId);
@@ -336,9 +315,43 @@ async function deletePdf(pdfId, pdfName) {
     }
 }
 
-/**
- * 获取 PDF 元数据
- */
+async function renamePdf(pdfId) {
+    const target = pdfs.find((p) => p.id === pdfId);
+    if (!target) return;
+
+    const input = window.prompt('请输入新的文献名称', target.name || '');
+    if (input === null) return;
+
+    const nextName = normalizePdfName(input);
+    if (!nextName) {
+        alert('文献名不能为空');
+        return;
+    }
+
+    const duplicate = pdfs.some((p) => p.id !== pdfId && normalizePdfName(p.name).toLowerCase() === nextName.toLowerCase());
+    if (duplicate) {
+        alert('已存在同名文献，请使用其他名称');
+        return;
+    }
+
+    await storage.renamePdf(pdfId, nextName);
+    await storage.renameSummaryCardPdfName(pdfId, nextName);
+
+    const idx = pdfs.findIndex((p) => p.id === pdfId);
+    if (idx >= 0) {
+        pdfs[idx] = { ...pdfs[idx], name: nextName };
+    }
+    renderList();
+
+    if (onPdfRenamed) {
+        await onPdfRenamed(pdfId, nextName);
+    }
+}
+
+function normalizePdfName(raw) {
+    return String(raw || '').trim().replace(/\.pdf$/i, '').trim();
+}
+
 export function getPdfMeta(pdfId) {
     return pdfs.find(p => p.id === pdfId);
 }

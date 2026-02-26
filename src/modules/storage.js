@@ -360,6 +360,25 @@ export function addSummary(summary) {
     });
 }
 
+export function renamePdf(id, nextName) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('pdfs', 'readwrite');
+        const store = tx.objectStore('pdfs');
+        const req = store.get(id);
+        req.onsuccess = () => {
+            const record = req.result;
+            if (!record) {
+                reject(new Error('PDF not found'));
+                return;
+            }
+            record.name = nextName;
+            store.put(record);
+            resolve(record);
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
 export function getSummaryByPdf(pdfId) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction('summaries', 'readonly');
@@ -402,6 +421,12 @@ export async function upsertSummaryCard(card) {
         pdfId: card.pdfId,
         pdfName: card.pdfName || '',
         content: card.content || '',
+        thumbnailDataUrl: typeof card.thumbnailDataUrl === 'string'
+            ? card.thumbnailDataUrl
+            : (existing?.thumbnailDataUrl || ''),
+        thumbnailUpdatedAt: typeof card.thumbnailDataUrl === 'string'
+            ? now
+            : (existing?.thumbnailUpdatedAt || null),
         createdAt: existing?.createdAt || now,
         updatedAt: now
     };
@@ -411,6 +436,19 @@ export async function upsertSummaryCard(card) {
         const store = tx.objectStore('summaryCards');
         const req = store.put(record);
         req.onsuccess = () => resolve(record);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function renameSummaryCardPdfName(pdfId, nextName) {
+    const card = await getSummaryCardByPdf(pdfId);
+    if (!card) return null;
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('summaryCards', 'readwrite');
+        const store = tx.objectStore('summaryCards');
+        const next = { ...card, pdfName: nextName, updatedAt: new Date().toISOString() };
+        const req = store.put(next);
+        req.onsuccess = () => resolve(next);
         req.onerror = () => reject(req.error);
     });
 }

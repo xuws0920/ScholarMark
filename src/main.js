@@ -3,7 +3,7 @@
  */
 
 import { initDB } from './modules/storage.js';
-import { initPdfViewer, loadPdf, goToPage, setScale, fitWidth, getCurrentPage, getCurrentScale } from './modules/pdf-viewer.js';
+import { initPdfViewer, loadPdf, goToPage, setScale, fitWidth, getCurrentPage, getCurrentScale, capturePageImage } from './modules/pdf-viewer.js';
 import { initAnnotator, setPdfId as setAnnotatorPdf, showToolbar, renderAllAnnotations, getAnnotations, navigateToAnnotation, linkAnnotationToNote, removeAnnotation } from './modules/annotator.js';
 import { initNoteEditor, setPdfId as setNoteEditorPdf, insertAnnotationRef, jumpToNoteByAnnotation, getNotes, getCurrentNote, removeAnnotationFromNotes } from './modules/note-editor.js';
 import { initSummaryEditor, setPdfId as setSummaryPdf, getCurrentSummary, clearSummaryView, appendToSummary } from './modules/summary-editor.js';
@@ -140,6 +140,13 @@ async function init() {
         clearOverviewView();
         clearTranslationView();
         refreshCardLibrary();
+        renderCollapsedLibraryList();
+      },
+      onPdfRenamed: async (pdfId, nextName) => {
+        if (pdfId === currentPdfId) {
+          $('#current-pdf-name').textContent = nextName;
+        }
+        await refreshCardLibrary(currentPdfId || null);
         renderCollapsedLibraryList();
       }
     });
@@ -336,10 +343,12 @@ function setupUIEvents() {
       return;
     }
     const meta = getPdfMeta(currentPdfId);
+    const thumbnailDataUrl = await buildCardThumbnailDataUrl();
     await storage.upsertSummaryCard({
       pdfId: currentPdfId,
       pdfName: meta?.name || '未知文献',
-      content: summary.content || ''
+      content: summary.content || '',
+      thumbnailDataUrl
     });
     await refreshCardLibrary(currentPdfId);
     alert('已导出为卡片（同文献会覆盖旧卡片）');
@@ -846,6 +855,7 @@ function renderCardLibrary() {
   const nameEl = $('#summary-card-pdf-name');
   const updatedAtEl = $('#summary-card-updated-at');
   renderCardSortButton();
+  renderCardDirectory();
 
   if (counter) counter.textContent = total === 0 ? '0 / 0' : `${activeCardIndex + 1} / ${total}`;
 
@@ -867,6 +877,67 @@ function renderCardLibrary() {
 
   prevBtn.disabled = activeCardIndex <= 0;
   nextBtn.disabled = activeCardIndex >= total - 1;
+}
+
+function renderCardDirectory() {
+  const list = $('#card-directory-list');
+  const totalEl = $('#card-directory-total');
+  if (!list) return;
+
+  if (totalEl) totalEl.textContent = String(summaryCards.length);
+  list.innerHTML = '';
+
+  if (!summaryCards.length) {
+    const empty = document.createElement('div');
+    empty.className = 'summary-card-empty';
+    empty.textContent = '暂无目录项';
+    list.appendChild(empty);
+    return;
+  }
+
+  summaryCards.forEach((card, idx) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = `card-directory-item${idx === activeCardIndex ? ' active' : ''}`;
+    item.setAttribute('data-card-id', card.id || '');
+    item.addEventListener('click', () => {
+      if (idx === activeCardIndex) return;
+      activeCardIndex = idx;
+      renderCardLibrary();
+    });
+
+    const thumbWrap = document.createElement('div');
+    thumbWrap.className = 'card-directory-thumb';
+    if (card.thumbnailDataUrl) {
+      const img = document.createElement('img');
+      img.src = card.thumbnailDataUrl;
+      img.alt = `${card.pdfName || '文献'} 缩略图`;
+      thumbWrap.appendChild(img);
+    }
+
+    const info = document.createElement('div');
+    info.className = 'card-directory-info';
+
+    const name = document.createElement('div');
+    name.className = 'card-directory-name';
+    name.textContent = card.pdfName || '未知文献';
+
+    const updated = document.createElement('div');
+    updated.className = 'card-directory-updated';
+    updated.textContent = `更新于 ${formatDateTime(card.updatedAt)}`;
+
+    info.appendChild(name);
+    info.appendChild(updated);
+
+    item.appendChild(thumbWrap);
+    item.appendChild(info);
+    list.appendChild(item);
+  });
+
+  const activeItem = list.querySelector('.card-directory-item.active');
+  if (activeItem) {
+    activeItem.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 function moveCard(step) {
@@ -928,6 +999,54 @@ function formatDateTime(isoString) {
   const d = new Date(isoString);
   if (Number.isNaN(d.getTime())) return '暂无';
   return d.toLocaleString();
+}
+
+async function buildCardThumbnailDataUrl() {
+  const source = capturePageImage(1) || capturePageImage();
+  if (!source) return '';
+  const next = await resizeThumbnailDataUrl(source, 240, 320, 0.72);
+  return next || source;
+}
+
+function resizeThumbnailDataUrl(dataUrl, width, height, quality = 0.72) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(dataUrl);
+          return;
+        }
+
+        const srcRatio = img.width / img.height;
+        const destRatio = width / height;
+        let sx = 0;
+        let sy = 0;
+        let sw = img.width;
+        let sh = img.height;
+
+        if (srcRatio > destRatio) {
+          sw = Math.floor(img.height * destRatio);
+          sx = Math.floor((img.width - sw) / 2);
+        } else {
+          sh = Math.floor(img.width / destRatio);
+          sy = Math.floor((img.height - sh) / 2);
+        }
+
+        ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      } catch (err) {
+        console.warn('Resize card thumbnail failed:', err);
+        resolve(dataUrl);
+      }
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 }
 
 function restoreSidebarLayoutState() {
