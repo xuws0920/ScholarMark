@@ -1,34 +1,34 @@
-/* =============================================
-   ScholarMark — 全局设计系统
+﻿/* =============================================
+   ScholarMark -?全局设计系统
    ============================================= */
 
 :root {
-  /* 基础色板 — 深色学术风格 */
-  --bg-primary: #0f1117;
-  --bg-secondary: #161822;
-  --bg-tertiary: #1e2030;
-  --bg-elevated: #252839;
-  --bg-hover: #2a2d42;
-  --bg-active: #32365a;
+  /* 基础色板 -?深色学术风格 */
+  --bg-primary: #191919;
+  --bg-secondary: #202020;
+  --bg-tertiary: #2a2a2a;
+  --bg-elevated: #2f2f2f;
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.1);
 
   /* 边框 */
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.1);
-  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-default: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.2);
 
   /* 文字 */
-  --text-primary: #e8eaed;
-  --text-secondary: #9aa0b0;
-  --text-tertiary: #636980;
-  --text-accent: #7c8cf8;
+  --text-primary: rgba(255, 255, 255, 0.9);
+  --text-secondary: rgba(255, 255, 255, 0.65);
+  --text-tertiary: rgba(255, 255, 255, 0.4);
+  --text-accent: #60A5FA;
 
-  /* 强调色 */
-  --accent-primary: #7c8cf8;
-  --accent-primary-hover: #9ba6fa;
-  --accent-primary-bg: rgba(124, 140, 248, 0.12);
-  --accent-danger: #f87171;
-  --accent-danger-bg: rgba(248, 113, 113, 0.12);
-  --accent-success: #34d399;
+  /* 强调-?*/
+  --accent-primary: #3B82F6;
+  --accent-primary-hover: #60A5FA;
+  --accent-primary-bg: rgba(59, 130, 246, 0.15);
+  --accent-danger: #EF4444;
+  --accent-danger-bg: rgba(239, 68, 68, 0.12);
+  --accent-success: #10B981;
 
   /* 标注颜色 */
   --highlight-yellow: #FBBF24;
@@ -38,20 +38,20 @@
   --highlight-red: #F87171;
 
   /* 阴影 */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
-  --shadow-glow: 0 0 20px rgba(124, 140, 248, 0.15);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 20px rgba(59, 130, 246, 0.15);
 
   /* 圆角 */
-  --radius-sm: 4px;
+  --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
 
   /* 字体 */
-  --font-sans: 'Noto Sans SC', -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, Menlo, monospace;
   --font-display: 'Playfair Display', serif;
 
   /* 动画 */
@@ -67,33 +67,33 @@
 
 /* ===== 浅色主题 ===== */
 [data-theme="light"] {
-  --bg-primary: #f5f6fa;
-  --bg-secondary: #ffffff;
-  --bg-tertiary: #eef0f5;
-  --bg-elevated: #ffffff;
-  --bg-hover: #e8eaf0;
-  --bg-active: #dde0ea;
+  --bg-primary: #F7F7F9;
+  --bg-secondary: #FFFFFF;
+  --bg-tertiary: #EFEFEF;
+  --bg-elevated: #FFFFFF;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-active: rgba(0, 0, 0, 0.08);
 
   --border-subtle: rgba(0, 0, 0, 0.06);
-  --border-default: rgba(0, 0, 0, 0.12);
-  --border-strong: rgba(0, 0, 0, 0.2);
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.15);
 
-  --text-primary: #1a1d2e;
-  --text-secondary: #4a5068;
-  --text-tertiary: #8890a4;
-  --text-accent: #5b6be0;
+  --text-primary: #37352F;
+  --text-secondary: rgba(55, 53, 47, 0.65);
+  --text-tertiary: rgba(55, 53, 47, 0.4);
+  --text-accent: #2563EB;
 
-  --accent-primary: #5b6be0;
-  --accent-primary-hover: #4a59d1;
-  --accent-primary-bg: rgba(91, 107, 224, 0.1);
-  --accent-danger: #e53e3e;
-  --accent-danger-bg: rgba(229, 62, 62, 0.1);
-  --accent-success: #2f9e7f;
+  --accent-primary: #2563EB;
+  --accent-primary-hover: #1D4ED8;
+  --accent-primary-bg: rgba(37, 99, 235, 0.1);
+  --accent-danger: #DC2626;
+  --accent-danger-bg: rgba(220, 38, 38, 0.1);
+  --accent-success: #059669;
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
-  --shadow-glow: 0 0 20px rgba(91, 107, 224, 0.15);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.03);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.08);
+  --shadow-glow: 0 0 20px rgba(37, 99, 235, 0.15);
 }
 
 /* 主题切换过渡 */
@@ -126,7 +126,7 @@ body {
 body {
   font-family: var(--font-sans);
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.65;
   color: var(--text-primary);
   background: var(--bg-primary);
   -webkit-font-smoothing: antialiased;
@@ -138,7 +138,7 @@ body {
   height: 100vh;
 }
 
-/* 滚动条美化 */
+/* 滚动条美-?*/
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -157,7 +157,7 @@ body {
   background: var(--text-tertiary);
 }
 
-/* ===== 顶部标题栏 ===== */
+/* ===== 顶部标题-?===== */
 #app-header {
   display: flex;
   align-items: center;
@@ -180,7 +180,7 @@ body {
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 700;
-  background: linear-gradient(135deg, var(--accent-primary), #c084fc);
+  background: var(--text-primary);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -210,6 +210,36 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   display: inline-block;
+}
+
+.current-doc-name:hover {
+  color: var(--text-primary);
+  cursor: default;
+}
+
+.header-doc-tooltip {
+  position: fixed;
+  z-index: 1200;
+  max-width: min(80vw, 720px);
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: color-mix(in srgb, var(--bg-elevated) 96%, transparent);
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  word-break: break-all;
+  box-shadow: var(--shadow-md);
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  pointer-events: none;
+}
+
+.header-doc-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .global-save-status {
@@ -266,6 +296,64 @@ body {
 .header-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+#btn-toggle-theme {
+  position: relative;
+  width: 54px;
+  height: 30px;
+  border-radius: 999px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-tertiary);
+  padding: 0;
+  overflow: hidden;
+}
+
+#btn-toggle-theme::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.22s ease;
+}
+
+#btn-toggle-theme[data-mode="light"]::before {
+  transform: translateX(24px);
+}
+
+#btn-toggle-theme #icon-dark,
+#btn-toggle-theme #icon-light {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translateY(-50%);
+  transition: opacity 0.18s ease;
+  z-index: 1;
+}
+
+#btn-toggle-theme #icon-dark {
+  left: 7px;
+}
+
+#btn-toggle-theme #icon-light {
+  right: 7px;
+}
+
+#btn-toggle-theme[data-mode="dark"] #icon-dark,
+#btn-toggle-theme[data-mode="light"] #icon-light {
+  opacity: 1;
+}
+
+#btn-toggle-theme[data-mode="dark"] #icon-light,
+#btn-toggle-theme[data-mode="light"] #icon-dark {
+  opacity: 0.35;
 }
 
 /* ===== 主体布局 ===== */
@@ -365,7 +453,7 @@ body {
   color: var(--accent-danger);
 }
 
-/* ===== 拖拽调整分隔线 ===== */
+/* ===== 拖拽调整分隔-?===== */
 .resize-handle {
   width: 4px;
   background: transparent;
@@ -378,7 +466,7 @@ body {
 
 .resize-handle:hover,
 .resize-handle.active {
-  background: var(--accent-primary);
+    background: color-mix(in srgb, var(--border-strong) 40%, transparent);
 }
 
 /* ===== 弹窗通用样式 ===== */
@@ -499,7 +587,7 @@ body {
   outline: none;
 }
 
-/* ===== 标注工具栏 ===== */
+/* ===== 标注工具-?===== */
 .annotation-toolbar {
   position: fixed;
   display: flex;
@@ -640,7 +728,7 @@ body {
   }
 }
 
-/* 闪烁高亮动画 — 用于标注跳转 */
+/* 闪烁高亮动画 -?用于标注跳转 */
 @keyframes flashHighlight {
   0% {
     outline: 3px solid var(--accent-primary);
@@ -902,3 +990,5 @@ body {
     max-height: 36vh;
   }
 }
+
+

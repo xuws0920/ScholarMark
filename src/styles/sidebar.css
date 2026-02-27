@@ -9,7 +9,8 @@
     min-width: 220px;
     max-width: 450px;
     background: var(--bg-secondary);
-    border-right: 1px solid var(--border-subtle);
+    border-right: none;
+    /* Removed for borderless */
     overflow: hidden;
     flex-shrink: 0;
 }
@@ -18,8 +19,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 14px;
-    border-bottom: 1px solid var(--border-subtle);
+    padding: 16px 14px;
+    border-bottom: 1px solid transparent;
     flex-shrink: 0;
 }
 
@@ -61,7 +62,7 @@
     width: 100%;
     padding: 8px 30px 8px 36px;
     background: var(--bg-tertiary);
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     border-radius: var(--radius-md);
     color: var(--text-primary);
     font-size: 13px;
@@ -180,6 +181,7 @@
 
 .pdf-item {
     display: flex;
+    border: 1px solid transparent;
     align-items: center;
     gap: 8px;
     padding: 10px 12px;
@@ -373,7 +375,7 @@
     width: 28px;
     height: 28px;
     border-radius: var(--radius-md);
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     display: inline-flex;
@@ -404,7 +406,7 @@
     display: flex;
     flex-direction: column;
     background: var(--bg-secondary);
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     z-index: 150;
@@ -437,7 +439,7 @@
 .collapsed-library-search {
     width: 100%;
     height: 32px;
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     border-radius: var(--radius-md);
     background: var(--bg-tertiary);
     color: var(--text-primary);
@@ -586,30 +588,87 @@
 }
 
 #app-main.left-sidebar-collapsed #sidebar-left {
-    width: 40px !important;
-    min-width: 40px !important;
-    max-width: 40px !important;
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    border: none !important;
+    overflow: visible !important;
 }
 
-#app-main.left-sidebar-collapsed #sidebar-left .sidebar-tabs,
-#app-main.left-sidebar-collapsed #sidebar-left .sidebar-panel,
-#app-main.left-sidebar-collapsed #sidebar-left #file-input,
-#app-main.left-sidebar-collapsed #sidebar-left #btn-import-pdf {
+
+/* Phase 4: Show header but restructure contents when collapsed */
+#app-main.left-sidebar-collapsed #sidebar-left .sidebar-header {
+    display: flex !important;
+    position: static;
+    pointer-events: none;
+    /* Let clicks pass through the invisible header parts */
+}
+
+/* Hide the tabs and import button */
+#app-main.left-sidebar-collapsed .sidebar-tabs,
+#app-main.left-sidebar-collapsed #btn-import-pdf {
     display: none !important;
 }
 
-#app-main.left-sidebar-collapsed #sidebar-left .sidebar-header {
+#app-main.left-sidebar-collapsed #btn-toggle-left-sidebar.in-collapsed-rail {
+    position: static !important;
+    transform: none !important;
+    pointer-events: auto;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    padding: 6px;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
     justify-content: center;
-    padding: 10px 6px;
+    color: var(--text-secondary);
 }
 
-#app-main.left-sidebar-collapsed #sidebar-left .sidebar-header-actions {
-    width: 100%;
-    justify-content: center;
+#app-main.left-sidebar-collapsed #btn-toggle-left-sidebar.in-collapsed-rail:hover {
+    background: var(--bg-hover) !important;
+    color: var(--text-primary);
 }
+
 
 #app-main.left-sidebar-collapsed #sidebar-left .collapsed-entry-rail {
     display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    /* Centered to avoid overlap with popup panels */
+    left: 12px;
+    background: color-mix(in srgb, var(--bg-secondary) 75%, transparent) !important;
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-radius: 999px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), inset 0 0 0 1px var(--border-subtle);
+    padding: 8px 6px !important;
+    z-index: 100;
+    cursor: grab;
+    user-select: none;
+}
+
+#app-main.left-sidebar-collapsed .collapsed-entry-btn {
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+}
+
+#app-main.left-sidebar-collapsed .collapsed-entry-btn:hover {
+    background: var(--bg-hover);
+}
+
+#app-main.left-sidebar-collapsed .collapsed-entry-btn.active {
+    background: var(--accent-primary-bg);
+}
+
+#app-main.left-sidebar-collapsed #sidebar-left .collapsed-entry-rail.dragging {
+    cursor: grabbing;
 }
 
 #app-main.left-sidebar-collapsed #resize-left {
@@ -620,4 +679,9 @@
     .collapsed-library-drawer {
         width: min(420px, calc(100vw - 56px));
     }
+}
+
+/* Phase 4 explicitly ensure pill is hidden when expanded */
+#app-main:not(.left-sidebar-collapsed) #collapsed-entry-rail {
+    display: none !important;
 }

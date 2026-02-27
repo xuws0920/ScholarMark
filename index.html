@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 
 <head>
@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:wght@700&display=swap"
     rel="stylesheet">
   <link rel="stylesheet" href="/src/styles/index.css">
   <link rel="stylesheet" href="/src/styles/sidebar.css">
@@ -25,6 +25,7 @@
       </div>
       <div class="header-center">
         <span id="current-pdf-name" class="current-doc-name">未打开文献</span>
+        <div id="current-pdf-name-tooltip" class="header-doc-tooltip" role="tooltip" aria-hidden="true"></div>
         <span id="global-save-status" class="global-save-status" data-state="saved">已保存</span>
       </div>
       <div class="header-right">
@@ -34,7 +35,7 @@
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
           </svg>
           <svg id="icon-light" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-            stroke-width="2" style="display:none;">
+            stroke-width="2">
             <circle cx="12" cy="12" r="5" />
             <line x1="12" y1="1" x2="12" y2="3" />
             <line x1="12" y1="21" x2="12" y2="23" />
@@ -220,6 +221,11 @@
                 <line x1="12" y1="4" x2="12" y2="20" />
               </svg>
             </button>
+            <button id="btn-toggle-comment-manager" class="toolbar-btn" title="评论管理">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+            </button>
           </div>
         </div>
         <div id="pdf-find-panel" class="pdf-find-panel" aria-hidden="true">
@@ -272,6 +278,18 @@
             </div>
           </div>
         </div>
+        <aside id="pdf-comment-panel" class="pdf-comment-panel" aria-hidden="true">
+          <div class="pdf-comment-panel-header">
+            <span class="summary-title">评论</span>
+            <div class="pdf-comment-panel-actions">
+              <button id="btn-export-annotated-pdf" class="btn-small" title="导出带批注 PDF">导出</button>
+              <button id="btn-close-comment-panel" class="btn-small" title="关闭">×</button>
+            </div>
+          </div>
+          <div id="pdf-comment-list" class="pdf-comment-list">
+            <p class="outline-empty">暂无评论</p>
+          </div>
+        </aside>
       </section>
 
       <div class="resize-handle resize-handle-right" id="resize-right"></div>
@@ -300,6 +318,11 @@
           <div id="translation-tab-bar" class="notes-tabs" style="display:none;">
             <button class="summary-tab-btn active" data-translation-tab="workbench">翻译工作区</button>
             <button class="summary-tab-btn" data-translation-tab="fulltext">全文翻译</button>
+          </div>
+
+          <div id="overview-tab-bar" class="notes-tabs" style="display:none;">
+            <button class="summary-tab-btn active" data-overview-tab="summary">总览</button>
+            <button class="summary-tab-btn" data-overview-tab="figures">图表摘录</button>
           </div>
         </div>
 
@@ -371,11 +394,6 @@
         </div>
 
         <div id="workspace-overview" class="workspace-panel" style="display:none;">
-          <div id="overview-tab-bar" class="notes-tabs">
-            <button class="summary-tab-btn active" data-overview-tab="summary">总览</button>
-            <button class="summary-tab-btn" data-overview-tab="figures">图表摘录</button>
-          </div>
-
           <div id="overview-tab-summary" class="summary-tab-panel active">
             <div id="overview-summary" class="note-preview">
               <p class="empty-hint">请先打开 PDF 文献</p>
@@ -526,13 +544,36 @@
     </section>
 
     <div id="annotation-toolbar" class="annotation-toolbar" style="display:none;">
-      <button class="color-btn" data-color="#FBBF24" title="黄色标注" style="background:#FBBF24;"></button>
-      <button class="color-btn" data-color="#34D399" title="绿色标注" style="background:#34D399;"></button>
-      <button class="color-btn" data-color="#60A5FA" title="蓝色标注" style="background:#60A5FA;"></button>
-      <button class="color-btn" data-color="#A78BFA" title="紫色标注" style="background:#A78BFA;"></button>
-      <button class="color-btn" data-color="#F87171" title="红色标注" style="background:#F87171;"></button>
+      <button class="style-btn active" data-style="highlight" title="添加高亮" aria-label="添加高亮">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M14.6 3.9l5.5 5.5-8.8 8.8-5.8 1 1-5.8 8.1-8.1z" />
+          <path d="M13.2 5.3l5.5 5.5" />
+        </svg>
+      </button>
+      <button class="style-btn" data-style="underline" title="添加下划线" aria-label="添加下划线">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 6v5a4 4 0 0 0 8 0V6" />
+          <path d="M12 6v9" />
+          <path d="M5 18h14" />
+        </svg>
+      </button>
+      <button class="style-btn" data-style="strikeout" title="添加删除线" aria-label="添加删除线">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 6v5a4 4 0 0 0 8 0V6" />
+          <path d="M12 6v9" />
+          <path d="M5 12h14" />
+        </svg>
+      </button>
+      <button id="btn-toggle-annotation-colors" class="insert-btn" title="颜色">🎨</button>
       <div class="toolbar-divider"></div>
       <button id="btn-insert-to-note" class="insert-btn" title="插入到笔记">📝</button>
+      <div id="annotation-color-drawer" class="annotation-color-drawer" aria-hidden="true">
+        <button class="color-btn" data-color="#FBBF24" title="黄色标注" style="background:#FBBF24;"></button>
+        <button class="color-btn" data-color="#34D399" title="绿色标注" style="background:#34D399;"></button>
+        <button class="color-btn" data-color="#60A5FA" title="蓝色标注" style="background:#60A5FA;"></button>
+        <button class="color-btn" data-color="#A78BFA" title="紫色标注" style="background:#A78BFA;"></button>
+        <button class="color-btn" data-color="#F87171" title="红色标注" style="background:#F87171;"></button>
+      </div>
     </div>
 
     <div id="annotation-context-menu" class="annotation-context-menu" style="display:none;">

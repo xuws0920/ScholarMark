@@ -307,11 +307,16 @@ export function addHighlightToPage(pageNum, annotation) {
         const mark = document.createElement('div');
         mark.className = 'highlight-mark';
         mark.dataset.annotationId = annotation.id;
+        mark.dataset.style = annotation.style || 'highlight';
         mark.style.left = `${rect.x * scale}px`;
         mark.style.top = `${rect.y * scale}px`;
         mark.style.width = `${rect.w * scale}px`;
         mark.style.height = `${rect.h * scale}px`;
-        mark.style.backgroundColor = `${annotation.color}55`;
+        if ((annotation.style || 'highlight') === 'highlight') {
+            mark.style.backgroundColor = `${annotation.color}55`;
+        } else {
+            mark.style.backgroundColor = 'transparent';
+        }
         mark.style.color = annotation.color;
 
         mark.addEventListener('click', (e) => {

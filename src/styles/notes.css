@@ -7,7 +7,7 @@
     min-width: 280px;
     max-width: 880px;
     border-right: none;
-    border-left: 1px solid var(--border-subtle);
+    border-left: none; /* Borderless */
     overflow: visible;
 }
 
@@ -22,28 +22,44 @@
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 6px;
+    border-bottom: 1px solid var(--border-subtle);
+    margin: 0;
+    padding-bottom: 0;
 }
 
 .workspace-btn {
-    padding: 6px 10px;
-    border: 1px solid var(--border-default);
-    background: var(--bg-tertiary);
+    padding: 8px 10px;
+    border: none;
+    background: transparent;
     color: var(--text-secondary);
-    border-radius: var(--radius-sm);
-    font-size: 12px;
+    border-radius: 0;
+    font-size: 13px;
+    font-weight: 500;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: color var(--transition-fast);
+    position: relative;
 }
 
 .workspace-btn:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
+    background: transparent !important;
+    color: var(--text-primary) !important;
 }
 
 .workspace-btn.active {
-    color: var(--accent-primary);
-    border-color: var(--accent-primary);
-    background: var(--accent-primary-bg);
+    color: var(--text-primary) !important;
+    background: transparent !important;
+    border: none !important;
+    font-weight: 600;
+}
+.workspace-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 20%;
+    right: 20%;
+    height: 2px;
+    background: var(--accent-primary);
+    border-radius: 2px 2px 0 0;
 }
 
 .md-toolbar {
@@ -60,7 +76,7 @@
 }
 
 .md-toolbar-btn {
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     border-radius: 8px;
     width: 28px;
     min-width: 28px;
@@ -123,7 +139,7 @@
     display: flex;
     flex-direction: column;
     background: var(--bg-elevated);
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     transform: translateX(-115%);
@@ -284,7 +300,8 @@
 /* 笔记 Tab 切换 */
 .notes-tabs {
     display: flex;
-    gap: 2px;
+    gap: 12px;
+    border-bottom: 1px solid transparent;
 }
 
 .tab-btn {
@@ -292,22 +309,30 @@
     background: transparent;
     border: none;
     color: var(--text-tertiary);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    border-radius: var(--radius-sm);
-    transition: all var(--transition-fast);
-    white-space: nowrap;
+    transition: color var(--transition-fast);
+    position: relative;
 }
-
 .tab-btn:hover {
-    color: var(--text-secondary);
-    background: var(--bg-hover);
+    color: var(--text-primary) !important;
+    background: transparent !important;
 }
-
 .tab-btn.active {
-    color: var(--accent-primary);
-    background: var(--accent-primary-bg);
+    color: var(--text-primary) !important;
+    background: transparent !important;
+    font-weight: 600;
+}
+.tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 15%;
+    right: 15%;
+    height: 2px;
+    background: var(--accent-primary);
+    border-radius: 2px;
 }
 
 .summary-tab-btn {
@@ -315,22 +340,30 @@
     background: transparent;
     border: none;
     color: var(--text-tertiary);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    border-radius: var(--radius-sm);
-    transition: all var(--transition-fast);
-    white-space: nowrap;
+    transition: color var(--transition-fast);
+    position: relative;
 }
-
 .summary-tab-btn:hover {
-    color: var(--text-secondary);
-    background: var(--bg-hover);
+    color: var(--text-primary) !important;
+    background: transparent !important;
 }
-
 .summary-tab-btn.active {
-    color: var(--accent-primary);
-    background: var(--accent-primary-bg);
+    color: var(--text-primary) !important;
+    background: transparent !important;
+    font-weight: 600;
+}
+.summary-tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -4px;
+    left: 15%;
+    right: 15%;
+    height: 2px;
+    background: var(--accent-primary);
+    border-radius: 2px;
 }
 
 /* 笔记文件选择栏 */
@@ -356,7 +389,7 @@
     flex: 1;
     padding: 6px 10px;
     background: var(--bg-tertiary);
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     border-radius: var(--radius-sm);
     color: var(--text-primary);
     font-size: 12px;
@@ -475,7 +508,7 @@
     width: min(430px, calc(100% - 20px));
     max-height: calc(100% - 20px);
     background: var(--bg-elevated);
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-lg);
     transform: translateX(110%);
@@ -520,7 +553,7 @@
     min-height: 110px;
     max-height: 180px;
     padding: 10px;
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     border-radius: var(--radius-md);
     background: var(--bg-secondary);
 }
@@ -699,7 +732,7 @@
     width: 68px;
     padding: 5px 8px;
     border-radius: var(--radius-sm);
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     background: var(--bg-tertiary);
     color: var(--text-primary);
     font-family: var(--font-mono);
@@ -913,7 +946,7 @@
 
 .markdown-body pre {
     background: var(--bg-tertiary);
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     border-radius: var(--radius-md);
     padding: 14px;
     margin: 10px 0;
@@ -1007,7 +1040,7 @@
 .markdown-body th,
 .markdown-body td {
     padding: 8px 12px;
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     text-align: left;
 }
 
@@ -1144,7 +1177,7 @@
 }
 
 .annotation-item-action {
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     background: var(--bg-tertiary);
     color: var(--text-secondary);
     cursor: pointer;
@@ -1190,7 +1223,7 @@
 .annotation-editor-textarea {
     width: 100%;
     background: var(--bg-primary);
-    border: 1px solid var(--border-default);
+    border: 1px solid transparent;
     border-radius: var(--radius-sm);
     color: var(--text-primary);
     font-family: var(--font-mono);
@@ -1227,4 +1260,26 @@
     padding: 8px 14px;
     border-top: 1px solid var(--border-subtle);
     flex-shrink: 0;
+}
+
+/* Notion-like Markdown typography */
+.markdown-body {
+    font-family: var(--font-sans) !important;
+    line-height: 1.7 !important;
+    color: var(--text-primary) !important;
+}
+.markdown-body h1, .markdown-body h2, .markdown-body h3 {
+    font-weight: 600 !important;
+    border-bottom: none !important;
+    margin-top: 1.5em !important;
+}
+.note-editor {
+    font-family: var(--font-sans) !important;
+    line-height: 1.7 !important;
+    padding: 20px !important;
+}
+
+/* Phase 5 minimal padding specifically for translation pane */
+#pdf-translation-preview.markdown-body {
+    padding: 4px 8px;
 }

@@ -217,6 +217,7 @@ export function addAnnotation(annotation) {
     return new Promise((resolve, reject) => {
         const tx = db.transaction('annotations', 'readwrite');
         const store = tx.objectStore('annotations');
+        const now = new Date().toISOString();
         const record = {
             id: annotation.id || generateId(),
             pdfId: annotation.pdfId,
@@ -226,9 +227,13 @@ export function addAnnotation(annotation) {
             displayTextMd: annotation.displayTextMd || '',
             questionMd: annotation.questionMd || '',
             color: annotation.color,
-            rects: annotation.rects, // 高亮区域坐标数组 [{x, y, w, h}]
+            style: annotation.style || 'highlight',
+            comment: annotation.comment || '',
+            entryMode: annotation.entryMode || null,
+            rects: annotation.rects,
             noteId: annotation.noteId || null,
-            createdAt: new Date().toISOString()
+            createdAt: now,
+            updatedAt: now
         };
         const req = store.put(record);
         req.onsuccess = () => resolve(record);
@@ -777,3 +782,4 @@ function generateId() {
 }
 
 export { generateId };
+
