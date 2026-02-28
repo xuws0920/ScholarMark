@@ -5,7 +5,7 @@
  */
 
 const DB_NAME = 'ScholarMarkDB';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 
 let db = null;
 
@@ -86,6 +86,26 @@ export function initDB() {
 
             if (!database.objectStoreNames.contains('settings')) {
                 database.createObjectStore('settings', { keyPath: 'key' });
+            }
+
+            if (!database.objectStoreNames.contains('graphs')) {
+                const graphStore = database.createObjectStore('graphs', { keyPath: 'id' });
+                graphStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+            }
+
+            if (!database.objectStoreNames.contains('graphNodes')) {
+                const nodeStore = database.createObjectStore('graphNodes', { keyPath: 'id' });
+                nodeStore.createIndex('graphId', 'graphId', { unique: false });
+                nodeStore.createIndex('docId', 'docId', { unique: false });
+                nodeStore.createIndex('graphId_docId', ['graphId', 'docId'], { unique: true });
+            }
+
+            if (!database.objectStoreNames.contains('graphEdges')) {
+                const edgeStore = database.createObjectStore('graphEdges', { keyPath: 'id' });
+                edgeStore.createIndex('graphId', 'graphId', { unique: false });
+                edgeStore.createIndex('sourceNodeId', 'sourceNodeId', { unique: false });
+                edgeStore.createIndex('targetNodeId', 'targetNodeId', { unique: false });
+                edgeStore.createIndex('graphId_source_target', ['graphId', 'sourceNodeId', 'targetNodeId'], { unique: true });
             }
         };
 
@@ -716,6 +736,264 @@ export function deleteTranslationJob(id) {
         req.onsuccess = () => resolve();
         req.onerror = () => reject(req.error);
     });
+}
+
+// ==================== Graph Workspace ====================
+
+export function createGraph(name) {
+    const now = new Date().toISOString();
+    const record = {
+        id: generateId(),
+        name: String(name || '').trim() || '未命名图谱',
+        createdAt: now,
+        updatedAt: now
+    };
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('graphs', 'readwrite');
+        const store = tx.objectStore('graphs');
+        const req = store.put(record);
+        req.onsuccess = () => resolve(record);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getAllGraphs() {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('graphs', 'readonly');
+        const store = tx.objectStore('graphs');
+        const req = store.getAll();
+        req.onsuccess = () => resolve((req.result || []).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt)));
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getGraph(graphId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('graphs', 'readonly');
+        const store = tx.objectStore('graphs');
+        const req = store.get(graphId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function updateGraph(graph) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('graphs', 'readwrite');
+        const store = tx.objectStore('graphs');
+        const next = { ...graph, updatedAt: new Date().toISOString() };
+        const req = store.put(next);
+        req.onsuccess = () => resolve(next);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function deleteGraph(graphId) {
+    const nodes = await getGraphNodes(graphId);
+    const edges = await getGraphEdges(graphId);
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(['graphs', 'graphNodes', 'graphEdges'], 'readwrite');
+        tx.objectStore('graphs').delete(graphId);
+        nodes.forEach((node) => tx.objectStore('graphNodes').delete(node.id));
+        edges.forEach((edge) => tx.objectStore('graphEdges').delete(edge.id));
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+export function getGraphNodes(graphId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('graphNodes', 'readonly');
+        const store = tx.objectStore('graphNodes');
+        const index = store.index('graphId');
+        const req = index.getAll(graphId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getGraphNode(nodeId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('graphNodes', 'readonly');
+        const store = tx.objectStore('graphNodes');
+        const req = store.get(nodeId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getGraphNodeByDocId(graphId, docId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('graphNodes', 'readonly');
+        const store = tx.objectStore('graphNodes');
+        const index = store.index('graphId_docId');
+        const req = index.get([graphId, docId]);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function addGraphNode(node) {
+    return new Promise((resolve, reject) => {
+        const now = new Date().toISOString();
+        const record = {
+            id: node.id || generateId(),
+            graphId: node.graphId,
+            docId: node.docId,
+            title: node.title || '',
+            authors: node.authors || '',
+            year: node.year || '',
+            x: Number(node.x) || 0,
+            y: Number(node.y) || 0,
+            createdAt: now,
+            updatedAt: now
+        };
+        const tx = db.transaction(['graphNodes', 'graphs'], 'readwrite');
+        const req = tx.objectStore('graphNodes').add(record);
+        req.onsuccess = () => {
+            touchGraphUpdatedAtTx(tx, record.graphId);
+            resolve(record);
+        };
+        req.onerror = () => reject(req.error);
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+export function updateGraphNode(node) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(['graphNodes', 'graphs'], 'readwrite');
+        const next = { ...node, updatedAt: new Date().toISOString() };
+        const req = tx.objectStore('graphNodes').put(next);
+        req.onsuccess = () => {
+            touchGraphUpdatedAtTx(tx, next.graphId);
+            resolve(next);
+        };
+        req.onerror = () => reject(req.error);
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+export async function deleteGraphNode(nodeId) {
+    const node = await getGraphNode(nodeId);
+    if (!node) return;
+    const edges = await getGraphEdges(node.graphId);
+    const relatedEdges = edges.filter((edge) => edge.sourceNodeId === nodeId || edge.targetNodeId === nodeId);
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(['graphNodes', 'graphEdges', 'graphs'], 'readwrite');
+        tx.objectStore('graphNodes').delete(nodeId);
+        relatedEdges.forEach((edge) => tx.objectStore('graphEdges').delete(edge.id));
+        touchGraphUpdatedAtTx(tx, node.graphId);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+export function getGraphEdges(graphId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('graphEdges', 'readonly');
+        const store = tx.objectStore('graphEdges');
+        const index = store.index('graphId');
+        const req = index.getAll(graphId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getGraphEdge(edgeId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('graphEdges', 'readonly');
+        const store = tx.objectStore('graphEdges');
+        const req = store.get(edgeId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getGraphEdgeByPair(graphId, sourceNodeId, targetNodeId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('graphEdges', 'readonly');
+        const store = tx.objectStore('graphEdges');
+        const index = store.index('graphId_source_target');
+        const req = index.get([graphId, sourceNodeId, targetNodeId]);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function addGraphEdge(edge) {
+    return new Promise((resolve, reject) => {
+        const now = new Date().toISOString();
+        const record = {
+            id: edge.id || generateId(),
+            graphId: edge.graphId,
+            sourceNodeId: edge.sourceNodeId,
+            targetNodeId: edge.targetNodeId,
+            sourceAnchor: Number.isInteger(edge.sourceAnchor) ? edge.sourceAnchor : 1,
+            targetAnchor: Number.isInteger(edge.targetAnchor) ? edge.targetAnchor : 3,
+            controlPoints: Array.isArray(edge.controlPoints) ? edge.controlPoints : [],
+            manualRouting: !!edge.manualRouting,
+            label: edge.label || '',
+            details: edge.details || '',
+            createdAt: now,
+            updatedAt: now
+        };
+        const tx = db.transaction(['graphEdges', 'graphs'], 'readwrite');
+        const req = tx.objectStore('graphEdges').add(record);
+        req.onsuccess = () => {
+            touchGraphUpdatedAtTx(tx, record.graphId);
+            resolve(record);
+        };
+        req.onerror = () => reject(req.error);
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+export function updateGraphEdge(edge) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(['graphEdges', 'graphs'], 'readwrite');
+        const next = {
+            ...edge,
+            sourceAnchor: Number.isInteger(edge.sourceAnchor) ? edge.sourceAnchor : 1,
+            targetAnchor: Number.isInteger(edge.targetAnchor) ? edge.targetAnchor : 3,
+            controlPoints: Array.isArray(edge.controlPoints) ? edge.controlPoints : [],
+            manualRouting: !!edge.manualRouting,
+            updatedAt: new Date().toISOString()
+        };
+        const req = tx.objectStore('graphEdges').put(next);
+        req.onsuccess = () => {
+            touchGraphUpdatedAtTx(tx, next.graphId);
+            resolve(next);
+        };
+        req.onerror = () => reject(req.error);
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+export async function deleteGraphEdge(edgeId) {
+    const edge = await getGraphEdge(edgeId);
+    if (!edge) return;
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(['graphEdges', 'graphs'], 'readwrite');
+        tx.objectStore('graphEdges').delete(edgeId);
+        touchGraphUpdatedAtTx(tx, edge.graphId);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+function touchGraphUpdatedAtTx(tx, graphId) {
+    const graphStore = tx.objectStore('graphs');
+    const req = graphStore.get(graphId);
+    req.onsuccess = () => {
+        const record = req.result;
+        if (!record) return;
+        record.updatedAt = new Date().toISOString();
+        graphStore.put(record);
+    };
 }
 
 export function getSetting(key) {

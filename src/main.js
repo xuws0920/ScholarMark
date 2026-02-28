@@ -10,6 +10,7 @@ import { initSummaryEditor, setPdfId as setSummaryPdf, getCurrentSummary, clearS
 import { initOverviewEditor, setPdfId as setOverviewPdf, clearOverviewView, refreshOverview } from './modules/overview-editor.js';
 import { initTranslationEditor, setPdfId as setTranslationPdf, clearTranslationView, getCurrentTranslationMarkdown, getFulltextTranslationMarkdown } from './modules/translation-editor.js';
 import { initLibrary, getPdfMeta, getPdfList, selectPdf } from './modules/library.js';
+import { initGraphWorkspace, setCurrentGraphPdfContext, openGraphWorkspaceView, closeGraphWorkspaceView } from './modules/graph-workspace.js';
 import { initSearch } from './modules/search.js';
 import { initOutline, loadOutline, clearOutline } from './modules/outline.js';
 import { chooseDirectory, exportNoteToDir, exportAllNotes, downloadNote, getLastExportError } from './utils/export.js';
@@ -122,6 +123,10 @@ async function init() {
         currentPdfId = pdfData.id;
         currentPdfBytes = pdfData.data;
         setHeaderDocName(meta.name);
+        setCurrentGraphPdfContext({
+          id: pdfData.id,
+          name: meta?.name || '未命名文献'
+        });
 
         await loadPdf(pdfData.data);
         await restoreReadingProgress(pdfData.id);
@@ -143,6 +148,7 @@ async function init() {
         currentPdfId = null;
         currentPdfBytes = null;
         setHeaderDocName(HEADER_EMPTY_DOC_NAME);
+        setCurrentGraphPdfContext(null);
         $('#pdf-pages').innerHTML = '';
         $('#welcome-screen').style.display = 'flex';
         clearOutline();
@@ -157,6 +163,10 @@ async function init() {
       onPdfRenamed: async (pdfId, nextName) => {
         if (pdfId === currentPdfId) {
           setHeaderDocName(nextName);
+          setCurrentGraphPdfContext({
+            id: pdfId,
+            name: nextName
+          });
         }
         await refreshCardLibrary(currentPdfId || null);
         renderCollapsedLibraryList();
@@ -164,6 +174,20 @@ async function init() {
     });
 
     initOutline();
+    await initGraphWorkspace({
+      onOpenPdf: async (pdfId) => {
+        activateSidebarTab('library');
+        await selectPdf(pdfId);
+      },
+      onActivateGraphTab: async () => {
+        activateSidebarTab('graph');
+        await openGraphWorkspaceView();
+      },
+      onCloseGraph: () => {
+        activateSidebarTab('library');
+        closeGraphWorkspaceView();
+      }
+    });
 
     initSearch({
       onAnnotationResultClick: async (annotation) => {
@@ -1082,10 +1106,17 @@ function syncViewerTranslationPreview(nextHtml = null) {
 
 function handleSidebarTabChange(target) {
   if (target === 'cards') {
+    closeGraphWorkspaceView();
     openCardLibrary();
     return;
   }
+  if (target === 'graph') {
+    closeCardLibrary();
+    openGraphWorkspaceView();
+    return;
+  }
   closeCardLibrary();
+  closeGraphWorkspaceView();
 }
 
 async function openCardLibrary() {
@@ -1380,7 +1411,7 @@ function applyLeftSidebarCollapsed(collapsed) {
 
   appMain.classList.toggle('left-sidebar-collapsed', leftSidebarCollapsed);
   syncCollapsedToggleButtonPlacement();
-  toggleBtn.textContent = leftSidebarCollapsed ? '⟩' : '⟨';
+  toggleBtn.textContent = leftSidebarCollapsed ? '›' : '‹';
   toggleBtn.title = leftSidebarCollapsed ? '展开左侧栏' : '收起左侧栏';
   if (!leftSidebarCollapsed) {
     closeCollapsedLibraryDrawer();
@@ -1390,21 +1421,28 @@ function applyLeftSidebarCollapsed(collapsed) {
 }
 
 function syncCollapsedToggleButtonPlacement() {
-  const toggleBtn = $('#btn-toggle-left-sidebar');
   const rail = $('#collapsed-entry-rail');
-  const headerActions = $('#sidebar-left .sidebar-header-actions');
-  if (!toggleBtn || !rail || !headerActions) return;
+  if (!rail) return;
+
+  const existingBtn = rail.querySelector('#btn-rail-expand');
 
   if (leftSidebarCollapsed) {
-    if (!rail.contains(toggleBtn)) {
-      rail.prepend(toggleBtn);
+    if (!existingBtn) {
+      const btn = document.createElement('button');
+      btn.id = 'btn-rail-expand';
+      btn.className = 'collapsed-entry-btn';
+      btn.title = '展开左侧栏';
+      btn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 17l5-5-5-5"/><path d="M6 17l5-5-5-5"/></svg>';
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        applyLeftSidebarCollapsed(false);
+      });
+      rail.prepend(btn);
     }
-    toggleBtn.classList.add('in-collapsed-rail');
   } else {
-    if (!headerActions.contains(toggleBtn)) {
-      headerActions.prepend(toggleBtn);
+    if (existingBtn) {
+      existingBtn.remove();
     }
-    toggleBtn.classList.remove('in-collapsed-rail');
   }
 }
 

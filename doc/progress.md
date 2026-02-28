@@ -175,3 +175,13 @@
 - **修复内容**：
   - **DOM 重挂载**：在左侧栏收纳时将 `#btn-toggle-left-sidebar` 真实移动到 `#collapsed-entry-rail` 内；展开时再移回 `.sidebar-header-actions`。
   - **样式收敛**：移除收纳态下对展开按钮的绝对定位方案，改为胶囊组内普通流式布局，确保拖拽时按钮与胶囊整体同步移动。
+
+### 2026-02-28：学术演进图谱连线优化
+
+- **问题**：图谱中文献节点间的连线箭头被目标节点遮挡，路径绕弯过多不够简洁。
+- **修复内容**：
+  - **箭头遮挡修复**：G6 节点配置新增 `anchorPoints`，将边端点移到节点边缘外侧 4px（`ARROW_OFFSET`），让箭头完整可见且几乎贴合节点。搭配 `getGraphAnchorPointFromNode` 同步偏移，确保控制点计算与 G6 渲染一致。
+  - **自动重算旧边路由**：`normalizeEdge` 改为对所有非手动路由的边强制重新推算锚点方向和控制点路径，不再使用数据库中存储的旧数据。
+  - **锚点方向优化**：`inferNodeAnchorFromDirection` 增加对水平连接的偏好（当水平距离超过节点宽度 30% 时优先选择左右方向），减少不必要的上下连接。
+  - **路由评分优化**：`chooseBestOrthogonalRoute` 采用加权评分（拐弯权重 200 + 路径长度），偏好更短更简洁的路径。`EDGE_STUB` 从 34px 减至 22px 减少伸出段。
+- **涉及文件**：`src/modules/graph-workspace.js`

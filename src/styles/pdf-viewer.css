@@ -41,6 +41,15 @@
     transform: translateY(-50%);
 }
 
+.toolbar-group-trailing {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    gap: 8px;
+    padding-left: 18px;
+}
+
 .toolbar-btn {
     display: flex;
     align-items: center;
