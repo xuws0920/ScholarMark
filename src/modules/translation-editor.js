@@ -1,5 +1,6 @@
-﻿import { $, debounce } from '../utils/dom.js';
+import { $, debounce } from '../utils/dom.js';
 import { renderMarkdown } from '../utils/markdown.js';
+import { extractImageFilesFromClipboard, hydrateMediaImages, insertImageBlocksAtCursor } from '../utils/media.js';
 import { capturePageImage, cancelFigureClipCapture, getCurrentPage, getTotalPages, startFigureClipCapture } from './pdf-viewer.js';
 import * as storage from './storage.js';
 import { sha256Text } from '../utils/hash.js';
@@ -146,6 +147,25 @@ function bindFulltextTabs() {
 function bindFulltextEditor() {
   const editor = $('#translation-fulltext-editor');
   if (!editor) return;
+  editor.addEventListener('md-toolbar-image-files', async (e) => {
+    const files = Array.from(e?.detail?.files || []);
+    if (!files.length || !currentPdfId) return;
+    await insertImageBlocksAtCursor({
+      textarea: editor,
+      pdfId: currentPdfId,
+      files
+    });
+  });
+  editor.addEventListener('paste', async (e) => {
+    const files = extractImageFilesFromClipboard(e.clipboardData);
+    if (!files.length || !currentPdfId) return;
+    e.preventDefault();
+    await insertImageBlocksAtCursor({
+      textarea: editor,
+      pdfId: currentPdfId,
+      files
+    });
+  });
   editor.addEventListener('input', debounce(() => {
     refreshFulltextOutline(editor.value || '');
     renderFulltextPreview();
@@ -545,7 +565,9 @@ function renderFulltextPreview() {
       node.title = item.fullText;
     }
   });
-  dispatchFulltextPreviewUpdate(content, preview.innerHTML);
+  void hydrateMediaImages(preview, currentPdfId).then(() => {
+    dispatchFulltextPreviewUpdate(content, preview.innerHTML);
+  });
 }
 
 function refreshFulltextOutline(content) {
@@ -829,6 +851,12 @@ async function persistFulltextDocument() {
   if (!editor) return;
   try {
     await storage.setSetting(fulltextDocKey(currentPdfId), editor.value || '');
+    await storage.syncMediaLinksForDocument({
+      pdfId: currentPdfId,
+      docType: 'translation_fulltext',
+      docId: currentPdfId,
+      markdown: editor.value || ''
+    });
     markSaved('全文翻译', '已保存');
   } catch (err) {
     console.warn(err);

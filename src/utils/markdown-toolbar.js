@@ -15,7 +15,6 @@ function setValueAndNotify(textarea, nextValue, selectionStart, selectionEnd) {
         textarea.setSelectionRange(selectionStart, selectionEnd);
     }
 
-    // Keep viewport stable after markdown transforms; avoid jumping to end.
     textarea.scrollTop = prevScrollTop;
     textarea.scrollLeft = prevScrollLeft;
     requestAnimationFrame(() => {
@@ -86,14 +85,35 @@ function insertCodeBlock(textarea) {
     setValueAndNotify(textarea, next, cursorStart, cursorEnd);
 }
 
+function requestImageFiles(textarea) {
+    if (!textarea) return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.multiple = true;
+    input.style.display = 'none';
+    input.addEventListener('change', () => {
+        const files = Array.from(input.files || []);
+        if (files.length) {
+            textarea.dispatchEvent(new CustomEvent('md-toolbar-image-files', {
+                bubbles: true,
+                detail: { files }
+            }));
+        }
+        input.remove();
+    }, { once: true });
+    document.body.appendChild(input);
+    input.click();
+}
+
 function applyAction(textarea, action) {
     if (!textarea || textarea.readOnly) return;
     switch (action) {
         case 'bold':
-            wrapSelection(textarea, '**', '**', '粗体文本');
+            wrapSelection(textarea, '**', '**', 'bold text');
             break;
         case 'italic':
-            wrapSelection(textarea, '*', '*', '斜体文本');
+            wrapSelection(textarea, '*', '*', 'italic text');
             break;
         case 'h1':
             applyHeading(textarea, 1);
@@ -120,7 +140,10 @@ function applyAction(textarea, action) {
             insertCodeBlock(textarea);
             break;
         case 'link':
-            wrapSelection(textarea, '[', '](https://)', '链接文本');
+            wrapSelection(textarea, '[', '](https://)', 'link text');
+            break;
+        case 'image':
+            requestImageFiles(textarea);
             break;
         default:
             break;
@@ -131,6 +154,7 @@ function createToolbar(textarea) {
     const wrapper = document.createElement('div');
     wrapper.className = 'md-toolbar';
     wrapper.dataset.for = ensureTextareaId(textarea);
+    const supportsImage = ['note-editor', 'summary-editor', 'translation-fulltext-editor'].includes(textarea.id);
 
     const actions = [
         { key: 'bold', label: 'B', title: 'Bold', group: 'text' },
@@ -145,6 +169,9 @@ function createToolbar(textarea) {
         { key: 'code-block', label: '{}', title: 'Code block', group: 'code' },
         { key: 'link', label: '🔗', title: 'Link', group: 'other' }
     ];
+    if (supportsImage) {
+        actions.push({ key: 'image', label: '🖼', title: 'Insert image', group: 'other' });
+    }
 
     let lastGroup = '';
     for (const item of actions) {

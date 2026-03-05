@@ -4,6 +4,7 @@
 
 import { $, debounce } from '../utils/dom.js';
 import { renderMarkdown } from '../utils/markdown.js';
+import { extractImageFilesFromClipboard, hydrateMediaImages, insertImageBlocksAtCursor } from '../utils/media.js';
 import { markSaved, markSaveError } from '../utils/save-status.js';
 import * as storage from './storage.js';
 
@@ -44,7 +45,18 @@ export function initNoteEditor(callbacks = {}) {
   const editor = $('#note-editor');
   if (!editor) return;
 
-  editor.addEventListener('paste', (e) => {
+  editor.addEventListener('paste', async (e) => {
+    const imageFiles = extractImageFilesFromClipboard(e.clipboardData);
+    if (imageFiles.length && currentPdfId) {
+      e.preventDefault();
+      await insertImageBlocksAtCursor({
+        textarea: editor,
+        pdfId: currentPdfId,
+        files: imageFiles
+      });
+      return;
+    }
+
     const text = pickBestPasteText(e.clipboardData);
     if (typeof text !== 'string' || text.length === 0) return;
     e.preventDefault();
@@ -52,11 +64,27 @@ export function initNoteEditor(callbacks = {}) {
     editor.dispatchEvent(new Event('input', { bubbles: true }));
   });
 
+  editor.addEventListener('md-toolbar-image-files', async (e) => {
+    const files = Array.from(e?.detail?.files || []);
+    if (!files.length || !currentPdfId) return;
+    await insertImageBlocksAtCursor({
+      textarea: editor,
+      pdfId: currentPdfId,
+      files
+    });
+  });
+
   editor.addEventListener('input', debounce(async () => {
     if (!currentNote) return;
     currentNote.content = editor.value;
     try {
       await storage.updateNote(currentNote);
+      await storage.syncMediaLinksForDocument({
+        pdfId: currentPdfId,
+        docType: 'note',
+        docId: currentNote.id,
+        markdown: currentNote.content || ''
+      });
       markSaved('笔记', '已保存');
     } catch (err) {
       console.warn(err);
@@ -149,6 +177,11 @@ async function deleteCurrentNote() {
   if (!currentNote) return;
   if (!confirm(`确定删除“${currentNote.title}”吗？`)) return;
 
+  await storage.deleteMediaLinksForDocument({
+    pdfId: currentPdfId,
+    docType: 'note',
+    docId: currentNote.id
+  });
   await storage.deleteNote(currentNote.id);
   notes = notes.filter((n) => n.id !== currentNote.id);
 
@@ -182,6 +215,12 @@ export async function insertAnnotationRef(annotation) {
     currentNote.linkedAnnotationIds.push(annotation.id);
   }
   await storage.updateNote(currentNote);
+  await storage.syncMediaLinksForDocument({
+    pdfId: currentPdfId,
+    docType: 'note',
+    docId: currentNote.id,
+    markdown: currentNote.content || ''
+  });
   markSaved('笔记', '已保存');
 
   annotation.noteId = currentNote.id;
@@ -213,6 +252,12 @@ export async function removeAnnotationFromNotes(annotationId) {
     note.content = cleaned;
     note.linkedAnnotationIds = linked.filter((id) => id !== annotationId);
     await storage.updateNote(note);
+    await storage.syncMediaLinksForDocument({
+      pdfId: note.pdfId,
+      docType: 'note',
+      docId: note.id,
+      markdown: note.content || ''
+    });
     markSaved('笔记', '已保存');
 
     if (currentNote && currentNote.id === note.id) {
@@ -245,6 +290,7 @@ function updatePreview() {
   preview.innerHTML = html || '<p class="empty-hint">暂无内容</p>';
   bindOutlineAnchorsToPreview(preview);
   recoverInvisibleMath(preview);
+  void hydrateMediaImages(preview, currentPdfId);
 }
 
 function updateNoteSelect() {

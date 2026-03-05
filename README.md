@@ -181,6 +181,11 @@ pm2 restart pdf-reader
 - 自动保存到本地数据库
 - 公式渲染（KaTeX）
 - 代码高亮（highlight.js）
+- 支持图片插入：
+  - 工具栏“插图”按钮上传图片
+  - `Ctrl+V` 粘贴剪贴板图片（图片优先）
+  - 编辑区以 Markdown 图片块写入（含标题与说明）
+  - 预览区按容器宽度自适应渲染
 
 ### 5. 笔记内目录（基于标注引用）
 
@@ -196,6 +201,7 @@ pm2 restart pdf-reader
 - 默认模板：研究内容、研究方法、研究结果、讨论
 - 支持重置模板与导出
 - 支持“导出为卡片”（按文献覆盖更新，并生成卡片缩略图）
+- 支持图片插入（上传 / 粘贴）与预览渲染
 
 ### 7. 概览工作区
 
@@ -277,6 +283,7 @@ pm2 restart pdf-reader
 - 默认输出中文译文（术语优先，公式尽量保留）
 - 支持 OpenAI-compatible 接口配置（Base URL / API Key / Model / 字段映射）
 - 全文翻译目录在编辑 Tab 下支持稳定跳转（编辑态与预览态均可定位）
+- 全文翻译编辑器支持图片插入（上传 / 粘贴）与预览渲染
 
 ### 13. 目录抽屉统一化
 
@@ -322,6 +329,8 @@ pm2 restart pdf-reader
   - `translations`
   - `translationJobs`
   - `translationCache`
+  - `mediaAssets`（图片二进制附件，按 `pdfId` 隔离）
+  - `mediaLinks`（正文与图片附件的引用关系，用于即时回收）
   - `graphs`
   - `graphNodes`
   - `graphEdges`

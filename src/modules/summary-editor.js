@@ -4,6 +4,7 @@
 
 import { $, debounce } from '../utils/dom.js';
 import { renderMarkdown } from '../utils/markdown.js';
+import { extractImageFilesFromClipboard, hydrateMediaImages, insertImageBlocksAtCursor } from '../utils/media.js';
 import { markSaved, markSaveError } from '../utils/save-status.js';
 import * as storage from './storage.js';
 
@@ -12,12 +13,12 @@ let currentSummary = null;
 
 export function initSummaryEditor() {
     const tabBtns = document.querySelectorAll('#summary-tab-bar .summary-tab-btn');
-    tabBtns.forEach(btn => {
+    tabBtns.forEach((btn) => {
         btn.addEventListener('click', () => {
-            tabBtns.forEach(b => b.classList.remove('active'));
+            tabBtns.forEach((b) => b.classList.remove('active'));
             btn.classList.add('active');
 
-            document.querySelectorAll('#workspace-summary .summary-tab-panel').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('#workspace-summary .summary-tab-panel').forEach((p) => p.classList.remove('active'));
             $(`#summary-tab-${btn.dataset.summaryTab}`)?.classList.add('active');
 
             if (btn.dataset.summaryTab === 'preview') {
@@ -27,11 +28,38 @@ export function initSummaryEditor() {
     });
 
     const editor = $('#summary-editor');
+    editor?.addEventListener('md-toolbar-image-files', async (e) => {
+        const files = Array.from(e?.detail?.files || []);
+        if (!files.length || !currentPdfId) return;
+        await insertImageBlocksAtCursor({
+            textarea: editor,
+            pdfId: currentPdfId,
+            files
+        });
+    });
+
+    editor?.addEventListener('paste', async (e) => {
+        const files = extractImageFilesFromClipboard(e.clipboardData);
+        if (!files.length || !currentPdfId) return;
+        e.preventDefault();
+        await insertImageBlocksAtCursor({
+            textarea: editor,
+            pdfId: currentPdfId,
+            files
+        });
+    });
+
     editor?.addEventListener('input', debounce(async () => {
         if (!currentSummary) return;
         currentSummary.content = editor.value;
         try {
             await storage.updateSummary(currentSummary);
+            await storage.syncMediaLinksForDocument({
+                pdfId: currentPdfId,
+                docType: 'summary',
+                docId: currentSummary.id,
+                markdown: currentSummary.content || ''
+            });
             markSaved('总结', '已保存');
         } catch (err) {
             console.warn(err);
@@ -46,6 +74,12 @@ export function initSummaryEditor() {
         currentSummary.content = getDefaultSummaryTemplate();
         $('#summary-editor').value = currentSummary.content;
         await storage.updateSummary(currentSummary);
+        await storage.syncMediaLinksForDocument({
+            pdfId: currentPdfId,
+            docType: 'summary',
+            docId: currentSummary.id,
+            markdown: currentSummary.content || ''
+        });
         markSaved('总结', '已保存');
         updatePreview();
     });
@@ -94,6 +128,12 @@ export async function appendToSummary(content, heading = '## AI 翻译片段') {
     currentSummary.content = merged;
     $('#summary-editor').value = merged;
     await storage.updateSummary(currentSummary);
+    await storage.syncMediaLinksForDocument({
+        pdfId: currentPdfId,
+        docType: 'summary',
+        docId: currentSummary.id,
+        markdown: currentSummary.content || ''
+    });
     markSaved('总结', '已保存');
     updatePreview();
     return true;
@@ -101,9 +141,11 @@ export async function appendToSummary(content, heading = '## AI 翻译片段') {
 
 function updatePreview() {
     const preview = $('#summary-preview');
+    if (!preview) return;
     const content = $('#summary-editor')?.value || '';
     preview.innerHTML = renderMarkdown(content) || '<p class="empty-hint">暂无内容</p>';
     recoverInvisibleMath(preview);
+    void hydrateMediaImages(preview, currentPdfId);
 }
 
 function getDefaultSummaryTemplate() {

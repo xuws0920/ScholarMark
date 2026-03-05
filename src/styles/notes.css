@@ -924,6 +924,49 @@
     text-decoration: underline;
 }
 
+.markdown-body img {
+    max-width: 100%;
+    height: auto;
+}
+
+.markdown-body figure.image-block {
+    margin: 12px 0;
+    padding: 10px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+}
+
+.markdown-body .image-block-image-wrap {
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.markdown-body .image-block-image-wrap img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    background: var(--bg-tertiary);
+}
+
+.markdown-body .image-block-caption {
+    margin-top: 8px;
+}
+
+.markdown-body .image-block-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.markdown-body .image-block-description {
+    margin-top: 2px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+}
+
 .markdown-body ul,
 .markdown-body ol {
     padding-left: 20px;

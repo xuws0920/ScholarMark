@@ -5,7 +5,7 @@
  */
 
 const DB_NAME = 'ScholarMarkDB';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 
 let db = null;
 
@@ -82,6 +82,20 @@ export function initDB() {
                 jobsStore.createIndex('pdfId', 'pdfId', { unique: false });
                 jobsStore.createIndex('status', 'status', { unique: false });
                 jobsStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+            }
+
+            if (!database.objectStoreNames.contains('mediaAssets')) {
+                const mediaStore = database.createObjectStore('mediaAssets', { keyPath: 'id' });
+                mediaStore.createIndex('pdfId', 'pdfId', { unique: false });
+                mediaStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+            }
+
+            if (!database.objectStoreNames.contains('mediaLinks')) {
+                const mediaLinksStore = database.createObjectStore('mediaLinks', { keyPath: 'id' });
+                mediaLinksStore.createIndex('assetId', 'assetId', { unique: false });
+                mediaLinksStore.createIndex('pdfId', 'pdfId', { unique: false });
+                mediaLinksStore.createIndex('pdf_doc', ['pdfId', 'docType', 'docId'], { unique: false });
+                mediaLinksStore.createIndex('asset_doc', ['assetId', 'docType', 'docId'], { unique: true });
             }
 
             if (!database.objectStoreNames.contains('settings')) {
@@ -179,8 +193,10 @@ export function deletePdf(id) {
             const translations = await getTranslationsByPdf(id);
             const jobs = await getTranslationJobsByPdf(id);
             const caches = await getTranslationCachesByPdf(id);
+            const mediaAssets = await getMediaAssetsByPdf(id);
+            const mediaLinks = await getMediaLinksByPdf(id);
 
-            const tx = db.transaction(['pdfs', 'annotations', 'notes', 'summaries', 'figureClips', 'summaryCards', 'translations', 'translationJobs', 'translationCache'], 'readwrite');
+            const tx = db.transaction(['pdfs', 'annotations', 'notes', 'summaries', 'figureClips', 'summaryCards', 'translations', 'translationJobs', 'translationCache', 'mediaAssets', 'mediaLinks'], 'readwrite');
             tx.objectStore('pdfs').delete(id);
             for (const ann of annotations) {
                 tx.objectStore('annotations').delete(ann.id);
@@ -205,6 +221,12 @@ export function deletePdf(id) {
             }
             for (const cache of caches) {
                 tx.objectStore('translationCache').delete(cache.id);
+            }
+            for (const asset of mediaAssets) {
+                tx.objectStore('mediaAssets').delete(asset.id);
+            }
+            for (const link of mediaLinks) {
+                tx.objectStore('mediaLinks').delete(link.id);
             }
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error);
@@ -994,6 +1016,184 @@ function touchGraphUpdatedAtTx(tx, graphId) {
         record.updatedAt = new Date().toISOString();
         graphStore.put(record);
     };
+}
+
+const MEDIA_SCHEME = 'scholarmark-media://';
+
+export function addMediaAsset(asset) {
+    return new Promise((resolve, reject) => {
+        const now = new Date().toISOString();
+        const record = {
+            id: asset.id || generateId(),
+            pdfId: asset.pdfId || '',
+            mimeType: asset.mimeType || 'application/octet-stream',
+            blob: asset.blob || null,
+            byteSize: Number(asset.byteSize) || Number(asset.blob?.size) || 0,
+            width: Number(asset.width) || 0,
+            height: Number(asset.height) || 0,
+            createdAt: now,
+            updatedAt: now
+        };
+        const tx = db.transaction('mediaAssets', 'readwrite');
+        const store = tx.objectStore('mediaAssets');
+        const req = store.put(record);
+        req.onsuccess = () => resolve(record);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getMediaAsset(id) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('mediaAssets', 'readonly');
+        const store = tx.objectStore('mediaAssets');
+        const req = store.get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getMediaAssetsByPdf(pdfId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('mediaAssets', 'readonly');
+        const store = tx.objectStore('mediaAssets');
+        const index = store.index('pdfId');
+        const req = index.getAll(pdfId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function deleteMediaAsset(id) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('mediaAssets', 'readwrite');
+        const store = tx.objectStore('mediaAssets');
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getMediaLinksByPdf(pdfId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('mediaLinks', 'readonly');
+        const store = tx.objectStore('mediaLinks');
+        const index = store.index('pdfId');
+        const req = index.getAll(pdfId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getMediaLinksByDocument({ pdfId, docType, docId }) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('mediaLinks', 'readonly');
+        const store = tx.objectStore('mediaLinks');
+        const index = store.index('pdf_doc');
+        const req = index.getAll([pdfId, docType, docId]);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export async function syncMediaLinksForDocument({ pdfId, docType, docId, markdown }) {
+    if (!pdfId || !docType || !docId) return;
+    const targetAssetIds = new Set(extractMediaAssetIds(markdown));
+    const existingLinks = await getMediaLinksByDocument({ pdfId, docType, docId });
+    const existingAssetIds = new Set(existingLinks.map((x) => x.assetId));
+    const toAdd = [];
+    const toDelete = [];
+
+    targetAssetIds.forEach((assetId) => {
+        if (!existingAssetIds.has(assetId)) {
+            toAdd.push(assetId);
+        }
+    });
+    existingLinks.forEach((link) => {
+        if (!targetAssetIds.has(link.assetId)) {
+            toDelete.push(link);
+        }
+    });
+
+    if (toAdd.length || toDelete.length) {
+        await new Promise((resolve, reject) => {
+            const tx = db.transaction('mediaLinks', 'readwrite');
+            const store = tx.objectStore('mediaLinks');
+            const now = new Date().toISOString();
+            toAdd.forEach((assetId) => {
+                store.put({
+                    id: generateId(),
+                    assetId,
+                    pdfId,
+                    docType,
+                    docId,
+                    createdAt: now,
+                    updatedAt: now
+                });
+            });
+            toDelete.forEach((link) => {
+                store.delete(link.id);
+            });
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
+    const removedAssetIds = Array.from(new Set(toDelete.map((x) => x.assetId)));
+    for (const assetId of removedAssetIds) {
+        await gcMediaAssetIfUnreferenced(assetId);
+    }
+}
+
+export async function deleteMediaLinksForDocument({ pdfId, docType, docId }) {
+    if (!pdfId || !docType || !docId) return;
+    const links = await getMediaLinksByDocument({ pdfId, docType, docId });
+    if (!links.length) return;
+
+    await new Promise((resolve, reject) => {
+        const tx = db.transaction('mediaLinks', 'readwrite');
+        const store = tx.objectStore('mediaLinks');
+        links.forEach((link) => {
+            store.delete(link.id);
+        });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+    });
+
+    const assetIds = Array.from(new Set(links.map((x) => x.assetId)));
+    for (const assetId of assetIds) {
+        await gcMediaAssetIfUnreferenced(assetId);
+    }
+}
+
+async function gcMediaAssetIfUnreferenced(assetId) {
+    if (!assetId) return;
+    const count = await countMediaLinksByAssetId(assetId);
+    if (count > 0) return;
+    await deleteMediaAsset(assetId);
+}
+
+function countMediaLinksByAssetId(assetId) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('mediaLinks', 'readonly');
+        const store = tx.objectStore('mediaLinks');
+        const index = store.index('assetId');
+        const req = index.count(assetId);
+        req.onsuccess = () => resolve(Number(req.result) || 0);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+function extractMediaAssetIds(markdown) {
+    const text = String(markdown || '');
+    const escapedScheme = MEDIA_SCHEME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`${escapedScheme}([a-zA-Z0-9_-]+)`, 'g');
+    const ids = [];
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+        const id = String(match[1] || '').trim();
+        if (id) ids.push(id);
+    }
+    return ids;
 }
 
 export function getSetting(key) {

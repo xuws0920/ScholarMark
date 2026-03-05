@@ -16,6 +16,7 @@ import { initOutline, loadOutline, clearOutline } from './modules/outline.js';
 import { chooseDirectory, exportNoteToDir, exportAllNotes, downloadNote, getLastExportError } from './utils/export.js';
 import { $, debounce } from './utils/dom.js';
 import { renderMarkdown } from './utils/markdown.js';
+import { hydrateMediaImages } from './utils/media.js';
 import { attachMarkdownToolbar, initMarkdownToolbars } from './utils/markdown-toolbar.js';
 import { markSaved, markSaveError } from './utils/save-status.js';
 import * as storage from './modules/storage.js';
@@ -1102,6 +1103,7 @@ function syncViewerTranslationPreview(nextHtml = null) {
     return;
   }
   target.innerHTML = html;
+  void hydrateMediaImages(target, currentPdfId);
 }
 
 function handleSidebarTabChange(target) {
