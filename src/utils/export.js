@@ -85,6 +85,26 @@ function sanitizeFileName(name) {
     return String(name || '').replace(/[<>:"/\\|?*]/g, '_').trim() || '未命名';
 }
 
+/**
+ * Export a global note to a directory under "全局笔记/" subfolder.
+ */
+export async function exportGlobalNoteToDir(dirHandle, noteTitle, content) {
+    lastExportErrorMessage = '';
+    try {
+        const subDir = await dirHandle.getDirectoryHandle('全局笔记', { create: true });
+        const baseName = sanitizeFileName(noteTitle || '未命名');
+        const mdHandle = await subDir.getFileHandle(`${baseName}.md`, { create: true });
+        const mdWritable = await mdHandle.createWritable();
+        await mdWritable.write(content || '');
+        await mdWritable.close();
+        return true;
+    } catch (e) {
+        lastExportErrorMessage = e?.message || String(e) || '未知导出错误';
+        console.error('全局笔记导出失败:', e);
+        return false;
+    }
+}
+
 function base64ToBytes(base64) {
     const bin = atob(base64);
     const out = new Uint8Array(bin.length);
@@ -386,7 +406,7 @@ function toStructuredBlocks(markdownText) {
         }
 
         if (/^\s*#{1,3}\s+/.test(line)) {
-            const level = (line.match(/^\s*(#{1,3})\s+/) || [,'#'])[1].length;
+            const level = (line.match(/^\s*(#{1,3})\s+/) || [, '#'])[1].length;
             blocks.push({ type: 'heading', level, text: line.replace(/^\s*#{1,3}\s+/, '') });
             continue;
         }

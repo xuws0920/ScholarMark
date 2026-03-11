@@ -13,6 +13,7 @@ import { initLibrary, getPdfMeta, getPdfList, selectPdf } from './modules/librar
 import { initGraphWorkspace, setCurrentGraphPdfContext, openGraphWorkspaceView, closeGraphWorkspaceView } from './modules/graph-workspace.js';
 import { initSearch } from './modules/search.js';
 import { initOutline, loadOutline, clearOutline } from './modules/outline.js';
+import { initGlobalNotes } from './modules/global-notes.js';
 import { chooseDirectory, exportNoteToDir, exportAllNotes, downloadNote, getLastExportError } from './utils/export.js';
 import { $, debounce } from './utils/dom.js';
 import { renderMarkdown } from './utils/markdown.js';
@@ -207,6 +208,8 @@ async function init() {
         }, 500);
       }
     });
+
+    initGlobalNotes();
 
     setupUIEvents();
     setupPdfCommentPanel();

@@ -5,7 +5,7 @@
  */
 
 const DB_NAME = 'ScholarMarkDB';
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 
 let db = null;
 
@@ -120,6 +120,12 @@ export function initDB() {
                 edgeStore.createIndex('sourceNodeId', 'sourceNodeId', { unique: false });
                 edgeStore.createIndex('targetNodeId', 'targetNodeId', { unique: false });
                 edgeStore.createIndex('graphId_source_target', ['graphId', 'sourceNodeId', 'targetNodeId'], { unique: true });
+            }
+
+            // 全局笔记表
+            if (!database.objectStoreNames.contains('globalNotes')) {
+                const globalNoteStore = database.createObjectStore('globalNotes', { keyPath: 'id' });
+                globalNoteStore.createIndex('updatedAt', 'updatedAt', { unique: false });
             }
         };
 
@@ -1251,6 +1257,70 @@ export async function searchAll(query) {
     );
 
     return results;
+}
+
+// ==================== 全局笔记相关 ====================
+
+export function addGlobalNote(note) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('globalNotes', 'readwrite');
+        const store = tx.objectStore('globalNotes');
+        const now = new Date().toISOString();
+        const record = {
+            id: note.id || generateId(),
+            title: note.title || '未命名笔记',
+            content: note.content || '',
+            createdAt: now,
+            updatedAt: now
+        };
+        const req = store.put(record);
+        req.onsuccess = () => resolve(record);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getAllGlobalNotes() {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('globalNotes', 'readonly');
+        const store = tx.objectStore('globalNotes');
+        const req = store.getAll();
+        req.onsuccess = () => {
+            const list = (req.result || []).sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+            resolve(list);
+        };
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function getGlobalNote(id) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('globalNotes', 'readonly');
+        const store = tx.objectStore('globalNotes');
+        const req = store.get(id);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function updateGlobalNote(note) {
+    return new Promise((resolve, reject) => {
+        note.updatedAt = new Date().toISOString();
+        const tx = db.transaction('globalNotes', 'readwrite');
+        const store = tx.objectStore('globalNotes');
+        const req = store.put(note);
+        req.onsuccess = () => resolve(note);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+export function deleteGlobalNote(id) {
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('globalNotes', 'readwrite');
+        const store = tx.objectStore('globalNotes');
+        const req = store.delete(id);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+    });
 }
 
 // ==================== 工具函数 ====================
